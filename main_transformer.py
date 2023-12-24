@@ -2,10 +2,10 @@ import torch
 from sklearn.metrics import f1_score
 #from utils import EarlyStopping, load_data
 from scipy.spatial import distance
-from utils_ import clark,intersection
-from utils_mugcn_pre import *
+from utils_ import clark,intersection,from_edge_index_to_adj
+# from utils_mugcn_pre import *
+from load_data_transformer import *
 from model import Gtransformerblock
-import dgl
 eps = 1e-9
 def score(logits, labels):
     _, indices = torch.max(logits, dim=1)
@@ -61,12 +61,12 @@ def main(args):
         train_mask,
         val_mask,
         test_mask,
-    ) = load_data(args.dataset)
+    ) = load_acm3(remove_self_loop=False)
     #APCPA
     meta_paths=[[("author","to","paper"),("paper","to","author")],[("author","to","paper"),("paper","to","conference"),("conference","to","paper"),("paper","to","author")]]
     adj_list = []
     for meta_path in meta_paths:
-        g1 = dgl.metapath_reachable_graph(g,meta_path)
+        g1 = from_edge_index_to_adj(g[meta_path].edge_index)
         A1 = g1.adj()
         adj_list.append(A1)
     print("A1",adj_list[0].shape)
