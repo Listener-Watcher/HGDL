@@ -7,8 +7,8 @@ from process_acm import return_acmgraph
 
 def load_acm3(remove_self_loop):
     g= return_acmgraph()
-    features = g.['author'].x
-    labels = g.['author'].y
+    features = g['author'].x
+    labels = g['author'].y
     num_classes = 14
     num_nodes = features.shape[0]
     #print(num_nodes)
