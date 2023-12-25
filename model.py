@@ -1,8 +1,8 @@
-import dgl
+#import dgl
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from dgl.nn.pytorch import GATConv
+#from dgl.nn.pytorch import GATConv
 import torch_geometric as geo
 import copy
 
