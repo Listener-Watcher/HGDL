@@ -35,3 +35,7 @@ def load_acm3(remove_self_loop):
         val_mask,
         test_mask,
     )
+def get_binary_mask(total_size, indices):
+    mask = torch.zeros(total_size)
+    mask[indices] = 1
+    return mask.byte()

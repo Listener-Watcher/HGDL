@@ -109,5 +109,5 @@ if __name__ == "__main__":
     parser.add_argument('--residual',type=bool,default=True)
     parser.add_argument('--use_bias',type=bool,default=True)
     args = parser.parse_args()
-    args = setup(args)
+    #args = setup(args)
     main(args)
