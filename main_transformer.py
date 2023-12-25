@@ -64,19 +64,22 @@ def main(args):
     ) = load_acm3(remove_self_loop=False)
     #APCPA
     #meta_paths=[[("author","to","paper"),("paper","to","author")],[("author","to","paper"),("paper","to","conference"),("conference","to","paper"),("paper","to","author")]]
-    meta_paths = [['AP','PA'],['AP','PC','CP','PA']]
-    adj_list = []
-    for paths in meta_paths:
-        temp_adj = from_edge_index_to_adj(g[paths[0]])
-        for i in range(1,len(paths)):
-            temp_adj = torch.matmul(temp_adj,g[paths[i]])
-        adj_list.append(temp_adj)
-    # for meta_path in meta_paths:
+    # meta_paths = [['AP','PA'],['AP','PC','CP','PA']]
+    # adj_list = []
+    # for paths in meta_paths:
+    #     temp_adj = from_edge_index_to_adj(g[paths[0]])
+    #     for i in range(1,len(paths)):
+    #         temp_adj = torch.matmul(temp_adj,g[paths[i]])
+    #     adj_list.append(temp_adj)
+
+    # # for meta_path in meta_paths:
     #     g1 = from_edge_index_to_adj(g[meta_path].edge_index)
     #     A1 = g1.adj()
     #     adj_list.append(A1)
-    print("A1",adj_list[0].shape)
+    #print("A1",adj_list[0].shape)
     print(features.shape)
+    for i in range(3):
+        adj_list.append(torch.ones((features[0],features[0])))
     num_heads = len(adj_list)
     in_dim = features.shape[1]
     out_dim = num_classes
