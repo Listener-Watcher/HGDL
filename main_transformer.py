@@ -63,6 +63,7 @@ def main(args):
         test_mask,
     ) = load_acm3(remove_self_loop=False)
     #APCPA
+    adj_list = []
     #meta_paths=[[("author","to","paper"),("paper","to","author")],[("author","to","paper"),("paper","to","conference"),("conference","to","paper"),("paper","to","author")]]
     # meta_paths = [['AP','PA'],['AP','PC','CP','PA']]
     # adj_list = []
@@ -79,12 +80,13 @@ def main(args):
     #print("A1",adj_list[0].shape)
     print(features.shape)
     for i in range(3):
-        adj_list.append(torch.ones((features[0],features[0])))
+        adj_list.append(torch.ones(features.shape[0],features.shape[0]))
     num_heads = len(adj_list)
     in_dim = features.shape[1]
     out_dim = num_classes
     dropout = args.dropout
     layer_norm = args.layer_norm
+    use_bias = args.use_bias
     model = Gtransformerblock(in_dim=in_dim, out_dim=out_dim, num_heads=num_heads, dropout=dropout, layer_norm=layer_norm, use_bias=use_bias)
     print("begin test")
     model.forward(adj_list,features)
