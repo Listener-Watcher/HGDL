@@ -25,7 +25,8 @@ class MultiAttentionLayer(nn.Module):
         Q_h = self.Q(h)
         K_h = self.K(h)
         V_h = self.V(h)
-        
+        print(Q_h.shape)
+        print(K_h.shape)
         A_tilde = torch.mul((1/torch.sqrt(h.shape[1]))*torch.torch.matmul(Q_h,torch.transpose(K_h,0,1)),adj_list[0])
         print("A_tilde",A_tilde.shape)
         attention = torch.nn.functional.softmax(A_tilde,dim=1)

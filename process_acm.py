@@ -102,22 +102,25 @@ print(sub_label_dist_norm[0])
 conf_label_dist_norm = torch.from_numpy(conf_label_dist_norm)
 #np.savez("data/ACM/acm_conf",x = features,y=conf_label_dist_norm,edge_ap = edges_ap,edge_pa=edges_pa,edge_pc=edges_pc,edge_pl = edges_pl,edge_lp=edges_lp,edge_pv=edges_pv,edge_vp=edges_vp,edge_af=edges_af,edge_fa=edges_fa)
 #np.savez("data/ACM/acm_subj",x = features,y=sub_label_dist_norm,edge_ap = edges_ap,edge_pa=edges_pa,edge_pc=edges_pc,edge_pl = edges_pl,edge_lp=edges_lp,edge_pv=edges_pv,edge_vp=edges_vp,edge_af=edges_af,edge_fa=edges_fa)
-hetero_graph = geo.data.HeteroData()
-hetero_graph['author'].x = features
-hetero_graph['author'].y = conf_label_dist_norm
-hetero_graph['author','to','paper'].edge_index = edges_ap
-hetero_graph['paper','to','author'].edge_index = edges_pa
-hetero_graph['paper','to','conference'].edge_index = edges_pc
-hetero_graph['conference','to','paper'].edge_index = edges_cp
-hetero_graph['paper','to','subjects'].edge_index = edges_pl
-hetero_graph['subjects','to','paper'].edge_index = edges_lp
-hetero_graph['paper','to','proceedings'].edge_index = edges_pv
-hetero_graph['proceedings','to','paper'].edge_index = edges_vp
-hetero_graph['author','to','affiliation'].edge_index = edges_af
-hetero_graph['affiliation','to','author'].edge_index = edges_fa
-
-def return_acmgraph():
-    return hetero_graph
+# hetero_graph = geo.data.HeteroData()
+# hetero_graph['author'].x = features
+# hetero_graph['author'].y = conf_label_dist_norm
+# hetero_graph['author','to','paper'].edge_index = edges_ap
+# hetero_graph['paper','to','author'].edge_index = edges_pa
+# hetero_graph['paper','to','conference'].edge_index = edges_pc
+# hetero_graph['conference','to','paper'].edge_index = edges_cp
+# hetero_graph['paper','to','subjects'].edge_index = edges_pl
+# hetero_graph['subjects','to','paper'].edge_index = edges_lp
+# hetero_graph['paper','to','proceedings'].edge_index = edges_pv
+# hetero_graph['proceedings','to','paper'].edge_index = edges_vp
+# hetero_graph['author','to','affiliation'].edge_index = edges_af
+# hetero_graph['affiliation','to','author'].edge_index = edges_fa
+meta_path_adj = {'AP':edges_ap,'PA':edges_pa,'PC':edges_pc,'CP':edges_cp,'PS':edges_pl,'SP':edges_lp,'PR':edges_pv,'RP':edges_vp,'AF':edges_af,'FA':edges_fa}
+acm_data = [features,conf_label_dist_norm,meta_path_adj]
+# def return_acmgraph():
+#     return hetero_graph
+def return_acm():
+    return acm_data
 #np.savez("data/acm/acm_conf", x=features, y=conf_label_dist, edge_index=edge_index)
 #np.savez("data/acm/acm_sub", x=features, y=sub_label_dist, edge_index=edge_index)
 #

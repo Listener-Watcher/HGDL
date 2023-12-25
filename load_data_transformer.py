@@ -3,12 +3,16 @@ import torch
 from scipy import io as sio, sparse
 import torch_geometric as geo
 # from preprocess_DBLP import *
-from process_acm import return_acmgraph
-
+from process_acm import return_acm
+#from process_acm import return_acmgraph
 def load_acm3(remove_self_loop):
-    g= return_acmgraph()
-    features = g['author'].x
-    labels = g['author'].y
+    #g= return_acmgraph()
+    data = return_acm()
+    features = data[0]
+    labels = data[1]
+    g = data[2]
+    #features = g['author'].x
+    #labels = g['author'].y
     num_classes = 14
     num_nodes = features.shape[0]
     #print(num_nodes)
