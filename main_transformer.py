@@ -1,7 +1,7 @@
 import torch
 from sklearn.metrics import f1_score
 from scipy.spatial import distance
-from utils_ import clark,intersection,from_edge_index_to_adj
+from utils_ import clark,intersection,from_edge_index_to_adj,gcn_norm,adj_norm
 # from utils_mugcn_pre import *
 from load_data_transformer import *
 from model import Gtransformerblock
@@ -22,19 +22,18 @@ class EarlyStopping(object):
         )
         self.patience = patience
         self.counter = 0
-        self.best_acc = None
+        #self.best_acc = None
         self.best_loss = None
         self.early_stop = False
         self.epochs = 0
         self.best_epochs = 0
 
-    def step(self, loss, acc, model):
+    def step(self, loss, model):
         if self.best_loss is None:
-            self.best_acc = acc
             self.best_loss = loss
             self.save_checkpoint(model)
             self.best_epochs = 0
-        elif (loss > self.best_loss) and (acc <= self.best_acc):
+        elif (loss > self.best_loss):
             self.counter += 1
             print(
                 f"EarlyStopping counter: {self.counter} out of {self.patience}"
@@ -42,11 +41,10 @@ class EarlyStopping(object):
             if self.counter >= self.patience:
                 self.early_stop = True
         else:
-            if (loss <= self.best_loss) and (acc >= self.best_acc):
+            if (loss <= self.best_loss):
                 self.save_checkpoint(model)
                 self.best_epochs = self.epochs
             self.best_loss = np.min((loss, self.best_loss))
-            self.best_acc = np.max((acc, self.best_acc))
             self.counter = 0
         self.epochs+=1
         return self.early_stop
@@ -86,7 +84,7 @@ def score(logits, labels):
     print(f'chebyshev distance:{score_cheb:.4f}')
     print(f'clark distance:{score_clark:.4f}')
     print(f'intersection distance:{score_intersection:.4f}')
-    return accuracy, micro_f1, macro_f1
+    return accuracy, micro_f1, macro_f1,score_cosin
 
 
 def evaluate(model, g, features, labels, mask, loss_func):
@@ -94,9 +92,9 @@ def evaluate(model, g, features, labels, mask, loss_func):
     with torch.no_grad():
         logits = model(g, features)
     loss = loss_func((logits[mask]+1e-9).log(), labels[mask]+1e-9)
-    accuracy, micro_f1, macro_f1 = score(logits[mask], labels[mask])
+    accuracy, micro_f1, macro_f1,score_intersection = score(logits[mask], labels[mask])
 
-    return loss, accuracy, micro_f1, macro_f1
+    return loss, accuracy, micro_f1, macro_f1,score_intersection
 
 
 def main(args):
@@ -113,15 +111,25 @@ def main(args):
         train_mask,
         val_mask,
         test_mask,
-    ) = load_acm3(remove_self_loop=False)
+    ) = load_data(args.dataset,args.seed)
+    print(len(train_idx))
     #APCPA
     adj_list = []
+    adj_list_origin = []
+    #args.device="cpu"
     meta_paths=[[("author","to","paper"),("paper","to","author")],[("author","to","affiliation"),("affiliation","to","author")]]
+    #meta_paths = [[("author","to","paper"),("paper","to","author")]]
+    #meta_paths=[[("author","to","paper"),("paper","to","conference"),("conference","to","paper"),("paper","to","author")],[("author","to","paper"),("paper","to","term"),("term","to","paper"),("paper","to","author")],[("author","to","paper"),("paper","to","author")]]
+    #meta_paths=[[("author","to","paper"),("paper","to","conference"),("conference","to","paper"),("paper","to","author")],[("author","to","paper"),("paper","to","author")]]
+    #meta_paths=[[("author","to","paper"),("paper","to","conference"),("conference","to","paper"),("paper","to","author")],[("author","to","paper"),("paper","to","term"),("term","to","paper"),("paper","to","author")]]
     meta_paths = list(tuple(meta_path) for meta_path in meta_paths)
+    print("start meta path creation")
     for meta_path in meta_paths:
         new_g = dgl.metapath_reachable_graph(g,meta_path)
         edge_index = torch.vstack((new_g.edges()[0].clone().detach(),new_g.edges()[1].clone().detach()))
-        adj_list.append(from_edge_index_to_adj(edge_index.to(torch.long)))
+        adj_list.append(gcn_norm(from_edge_index_to_adj(edge_index.to(torch.long)).to(args.device)))
+        adj_list_origin.append((from_edge_index_to_adj(edge_index.to(torch.long)).to(args.device)))
+    print("end meta path creation")
     #print(adj_list[0].shape)
     #print("num_heads",len(adj_list))
     # meta_paths = [['AP','PA'],['AP','PC','CP','PA']]
@@ -140,13 +148,18 @@ def main(args):
     print(features.shape)
     #for i in range(3):
     #    adj_list.append(torch.ones(features.shape[0],features.shape[0]))
+    features = features.to(args.device)
+    labels = labels.to(args.device)
+    train_mask = train_mask.to(args.device)
+    val_mask = val_mask.to(args.device)
+    test_mask = test_mask.to(args.device)
     num_heads = len(adj_list)
     in_dim = features.shape[1]
     out_dim = num_classes
     dropout = args.dropout
     layer_norm = args.layer_norm
     use_bias = args.use_bias
-    model = Gtransformerblock(in_dim=in_dim,hid_dim=128,out_dim=out_dim, num_heads=num_heads, dropout=dropout, layer_norm=layer_norm, use_bias=use_bias)
+    model = Gtransformerblock(in_dim=in_dim,hid_dim=64,out_dim=out_dim, num_heads=num_heads,adj_list=adj_list,adj_list_origin = adj_list_origin,features=features,labels=labels,train_mask=train_mask,val_mask=val_mask,test_mask=test_mask,device=args.device,dropout=dropout, layer_norm=layer_norm, use_bias=use_bias).to(args.device)
     #print("begin test")
     #model.forward(adj_list,features)
     #print("end test")
@@ -156,7 +169,7 @@ def main(args):
     #loss_fcn = torch.nn.CrossEntropyLoss()
     loss_fcn = torch.nn.KLDivLoss(reduction='batchmean')
     optimizer = torch.optim.Adam(
-        model.parameters(), lr=0.0005, weight_decay=0
+        model.parameters(), lr=0.005, weight_decay=0
     )
     for epoch in range(1000):
         model.train()
@@ -165,13 +178,17 @@ def main(args):
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
-        train_acc, train_micro_f1, train_macro_f1 = score(
+        train_acc, train_micro_f1, train_macro_f1,train_score_intersection = score(
             logits[train_mask], labels[train_mask]
         )
-        val_loss, val_acc, val_micro_f1, val_macro_f1 = evaluate(
+        val_loss, val_acc, val_micro_f1, val_macro_f1,val_score_intersection = evaluate(
             model, adj_list, features, labels, val_mask, loss_fcn
         )
-        early_stop = stopper.step(val_loss.data.item(), val_acc, model)
+        '''test_loss, test_acc, test_micro_f1, test_macro_f1,test_score_intersection = evaluate(
+            model, adj_list, features, labels, test_mask, loss_fcn
+        )'''
+        early_stop = stopper.step(val_loss.data.item(), model)
+        #early_stop = stopper.step(val_score_intersection,model)
 
         print(
             "Epoch {:d} | Train Loss {:.4f} | Train Micro f1 {:.4f} | Train Macro f1 {:.4f} | "
@@ -185,12 +202,12 @@ def main(args):
                 val_macro_f1,
             )
         )
-
+        #print(test_loss)
         if early_stop:
             break
 
     stopper.load_checkpoint(model)
-    test_loss, test_acc, test_micro_f1, test_macro_f1 = evaluate(
+    test_loss, test_acc, test_micro_f1, test_macro_f1,_ = evaluate(
         model, adj_list, features, labels, test_mask, loss_fcn
     )
     print(
@@ -205,25 +222,17 @@ if __name__ == "__main__":
     import argparse
     #from utils import setup
     parser = argparse.ArgumentParser("HAN")
-    parser.add_argument("-s", "--seed", type=int, default=1, help="Random seed")
-    """parser.add_argument(
-        "-ld",
-        "--log-dir",
-        type=str,
-        default="results",
-        help="Dir for saving training results",
-    )"""
     parser.add_argument('--device', type=str, default='cuda:0' if torch.cuda.is_available() else 'cpu', help='gpu or cpu')
     parser.add_argument('--epochs', type=int, default=6000)
     parser.add_argument('--dataset',type=str,default='dblp')
-    parser.add_argument('--lr', type=float, default=0.0005)
+    parser.add_argument('--lr', type=float, default=0.001)
     parser.add_argument('--alpha',type=float,default=0)
     parser.add_argument('--weight_decay', type=float, default=0.0005)
-    parser.add_argument('--dropout', type=float, default=0.6)
+    parser.add_argument('--dropout', type=float, default=0.3)
     parser.add_argument('--layer_norm',type=bool,default=True)
     parser.add_argument('--residual',type=bool,default=True)
     parser.add_argument('--use_bias',type=bool,default=True)
-    parser.add_argument('--patience',type=int,default=1000)
+    parser.add_argument('--patience',type=int,default=50)
+    parser.add_argument('--seed',type=int,default=0)
     args = parser.parse_args()
-    #args = setup(args)
     main(args)

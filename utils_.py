@@ -2,8 +2,9 @@ import numpy as np
 import torch
 from torch_geometric.utils import to_dense_adj,dense_to_sparse,get_laplacian
 import time
-
-device = 'cuda'
+from dgl import GCNNorm
+device = 'cuda:0'
+#device= 'cpu'
 eps = 1e-7
 def truncate(edge_indexF,mode,n):
     """
@@ -128,15 +129,13 @@ def gcn_norm(adj):
     degrees = torch.sum(adj,1)
     degrees = torch.pow(degrees,-0.5)
     D = torch.diag(degrees)
+    #return (torch.sparse.mm(torch.sparse.mm(D,adj),D)).to_dense()
     return torch.matmul(torch.matmul(D,adj),D)
 def adj_norm(adj):
     D = torch.diag(torch.sum(adj,1))
     return D-adj
-
-
 def k_hop(A,i,k):
-    for hop in range(k):
-        A[i]
+    pass
 def homophily(edge_list,labels):
     #print(edge_list)
     score = 0
