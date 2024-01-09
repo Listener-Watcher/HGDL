@@ -589,7 +589,7 @@ name_list = ['APA','APCPA','APTPA']
     #np.savez("dblp_homo_list/"+name_list[count], x=homo_graph_list[count].x, y=homo_graph_list[0].y, edge_index=homo_graph_list[count].edge_index)
     count+=1
 '''
-y = np.load('./dblp_homo_list/APA.npz')['y']
+y = np.load('./DBLP/APA.npz')['y']
 hetero_graph['author'].y = torch.from_numpy(y)
 print(y.shape)
 print(hetero_graph['author'].num_nodes)
