@@ -50,7 +50,7 @@ def score(logits, labels):
 def evaluate(model, g, g2,features, labels, mask, loss_func):
     model.eval()
     with torch.no_grad():
-        logits = model(g, features,g2)
+        logits,_ = model(g, features,g2)
     loss = loss_func((logits[mask]+1e-9).log(), labels[mask]+1e-9)
     accuracy, micro_f1, macro_f1,score_intersection = score(logits[mask], labels[mask])
 
@@ -216,9 +216,10 @@ class GCN_attention_v2(nn.Module):
         #attention = torch.sparse.softmax(A_tilde,dim=1)     
         X_tilde = torch.matmul(gcn_norm(attention),V_h)
         X_tilde = self.layer_norm(X_tilde)'''
-        X_tilde = x
-        z = self.gcn2(X_tilde,adj)
-        return F.softmax(z,dim=1) 
+        #z = self.gcn2(X_tilde,adj)
+        z = self.gcn2(x,adj)
+        k = nz
+        return F.softmax(z,dim=1),k
         
         
         
@@ -510,7 +511,7 @@ class Gtransformerblock(nn.Module):
         #memory_loss_val = 100
         for epoch in range(1000):
             optimizer.zero_grad()
-            output = gat.forward(adj_list,features,adj_list_origin)
+            output,reg = gat.forward(adj_list,features,adj_list_origin)
             kl_loss = loss((output[train_mask]+eps).log(),(labels[train_mask]+eps))
             kl_loss_val = loss((output[val_mask]+eps).log(),(labels[val_mask]+eps))
             #kl_loss.backward(retain_graph=True)
@@ -518,7 +519,9 @@ class Gtransformerblock(nn.Module):
             #    (kl_loss+torch.sum(torch.abs(memory-nz))).backward()
             #else:
             #    kl_loss.backward()
-            kl_loss.backward()
+            uniform = torch.FloatTensor([[1/2,1/2]]*adj_list[0].shape[0]).to('cuda:0')
+            reg_loss = torch.sum(torch.abs(reg-uniform))
+            (kl_loss+0.01*reg_loss).backward()
             #memory=nz
             optimizer.step()
             if kl_loss_val<best_loss:
