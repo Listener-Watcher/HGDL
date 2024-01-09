@@ -180,6 +180,7 @@ class GCN_attention_v2(nn.Module):
         #self.memory_unit = torch.FloatTensor([[1/3,1/3,1/3,0,1,0]]*adj_list[0].shape[0]).to('cuda:0')
         self.memory_unit = torch.FloatTensor([[1/2,1/2]]*adj_list[0].shape[0]).to('cuda:0')
         #self.memory_adj = torch.FloatTensor(adj_list[0].shape).to('cuda:0')
+        self.gcn=GraphConvolution(nhid,nhid)
     def forward(self,adj_list,x,adj_list_origin):
         #self.weight = torch.softmax(self.weight,dim=1)
         #print("weight",self.weight)
@@ -205,7 +206,8 @@ class GCN_attention_v2(nn.Module):
         #adj = gcn_norm(adj)
         adj = adj.to_sparse()
         x = F.relu(self.gcn1(x,adj))
-        Q_h = self.Q(x)
+        x = F.relu(self.gcn(x,adj))
+        '''Q_h = self.Q(x)
         K_h = torch.transpose(self.K(x),0,1)
         V_h = self.V(x)
         #A_tilde = sparse_dense_mul(adj,torch.matmul(Q_h,K_h))
@@ -213,22 +215,10 @@ class GCN_attention_v2(nn.Module):
         attention = F.softmax(A_tilde,dim=1)   
         #attention = torch.sparse.softmax(A_tilde,dim=1)     
         X_tilde = torch.matmul(gcn_norm(attention),V_h)
-        X_tilde = self.layer_norm(X_tilde)
+        X_tilde = self.layer_norm(X_tilde)'''
+        X_tilde = x
         z = self.gcn2(X_tilde,adj)
-        return F.softmax(z,dim=1)
-    @torch.no_grad()
-    def embed(self,adj,h):
-        self.eval()
-        x = F.relu(self.gcn1(h,adj))
-        Q_h = self.Q(x)
-        K_h = torch.transpose(self.K(x),0,1)
-        V_h = self.V(x)
-        A_tilde = torch.mul(adj.to_dense(),torch.matmul(Q_h,K_h))
-        attention = F.softmax(A_tilde,dim=1)
-        X_tilde = torch.matmul(gcn_norm(attention),V_h)
-        X_tilde = self.layer_norm(X_tilde)
-        z = self.gcn2(X_tilde,adj)
-        return F.softmax(z,dim=1)     
+        return F.softmax(z,dim=1) 
         
         
         
