@@ -52,7 +52,17 @@ conferences = acm['C']
 papers = acm['P']
 terms = acm['T']
 proceedings = acm['V']
-
+print("subjects number",subjects.shape)
+print("affiliations number",affiliations.shape)
+print("conferences number",conferences.shape)
+print("papers number",papers.shape)
+print("terms number",terms.shape)
+print("proceedings number",proceedings.shape)
+print("pa",edges_pa.shape)
+print("pc",edges_pc.shape)
+print("pl",edges_pl.shape)
+print("pv",edges_pv.shape)
+print("af",edges_af.shape)
 sub_full_to_dense = [0] * subjects.size
 for i in range(subjects.size):
     letter = subjects[i][0].item()[0].lower()
@@ -102,19 +112,44 @@ print(sub_label_dist_norm[0])
 conf_label_dist_norm = torch.from_numpy(conf_label_dist_norm)
 #np.savez("data/ACM/acm_conf",x = features,y=conf_label_dist_norm,edge_ap = edges_ap,edge_pa=edges_pa,edge_pc=edges_pc,edge_pl = edges_pl,edge_lp=edges_lp,edge_pv=edges_pv,edge_vp=edges_vp,edge_af=edges_af,edge_fa=edges_fa)
 #np.savez("data/ACM/acm_subj",x = features,y=sub_label_dist_norm,edge_ap = edges_ap,edge_pa=edges_pa,edge_pc=edges_pc,edge_pl = edges_pl,edge_lp=edges_lp,edge_pv=edges_pv,edge_vp=edges_vp,edge_af=edges_af,edge_fa=edges_fa)
+num_nodes = features.shape[0]
+#print("number of nodes",num_nodes)
+#features = features[0:1,:]
+subset_size = int(num_nodes/3)
+features = features[0:subset_size,:]
+print("after cut:",features.shape)
+conf_label_dist_norm = conf_label_dist_norm[0:subset_size,:]
+print(torch.min(edges_ap[0]))
+edges_ap_sub = [[],[]]
+edges_af_sub = [[],[]]
+for i in range(edges_ap.shape[1]):
+    if edges_ap[0][i] < subset_size:
+        edges_ap_sub[0].append(edges_ap[0][i])
+        edges_ap_sub[1].append(edges_ap[1][i])
+for i in range(edges_af.shape[1]):
+    if edges_af[0][i] < subset_size:
+        edges_af_sub[0].append(edges_af[0][i])
+        edges_af_sub[1].append(edges_af[1][i])
+
+edges_ap_sub_ = torch.tensor([edges_ap_sub[0], edges_ap_sub[1]])
+print(edges_ap_sub_.shape)
+edges_pa_sub_ = torch.tensor([edges_ap_sub[1], edges_ap_sub[0]])
+edges_af_sub_ = torch.tensor([edges_af_sub[0], edges_af_sub[1]])
+edges_fa_sub_ = torch.tensor([edges_af_sub[1], edges_af_sub[0]])
+print(torch.max(edges_ap_sub_[0]))
 hetero_graph = geo.data.HeteroData()
 hetero_graph['author'].x = features
 hetero_graph['author'].y = conf_label_dist_norm
-hetero_graph['author','to','paper'].edge_index = edges_ap
-hetero_graph['paper','to','author'].edge_index = edges_pa
+hetero_graph['author','to','paper'].edge_index = edges_ap_sub_
+hetero_graph['paper','to','author'].edge_index = edges_pa_sub_
 hetero_graph['paper','to','conference'].edge_index = edges_pc
 hetero_graph['conference','to','paper'].edge_index = edges_cp
 hetero_graph['paper','to','subjects'].edge_index = edges_pl
 hetero_graph['subjects','to','paper'].edge_index = edges_lp
 hetero_graph['paper','to','proceedings'].edge_index = edges_pv
 hetero_graph['proceedings','to','paper'].edge_index = edges_vp
-hetero_graph['author','to','affiliation'].edge_index = edges_af
-hetero_graph['affiliation','to','author'].edge_index = edges_fa
+hetero_graph['author','to','affiliation'].edge_index = edges_af_sub_
+hetero_graph['affiliation','to','author'].edge_index = edges_fa_sub_
 #meta_path_adj = {'AP':edges_ap,'PA':edges_pa,'PC':edges_pc,'CP':edges_cp,'PS':edges_pl,'SP':edges_lp,'PR':edges_pv,'RP':edges_vp,'AF':edges_af,'FA':edges_fa}
 #acm_data = [features,conf_label_dist_norm,meta_path_adj]
 def return_acmgraph():

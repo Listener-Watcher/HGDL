@@ -5,6 +5,8 @@ import pandas as pd
 from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 import networkx as nx
 import torch
+from collections import defaultdict
+import torch_geometric as geo
 # converting json files into lists of dicts
 # business = []
 # with open('data/yelp_dataset/yelp_academic_dataset_business.json', encoding='utf-8') as business_file:
@@ -67,7 +69,7 @@ np.save("data/yelp/business_label", business_label)
 np.savez("data/yelp/business_id", index_to_business=index_to_business, business_to_index=business_to_index)
 '''
 
-business_list = np.load("data/yelp/business.npy", allow_pickle=True)
+"""business_list = np.load("data/yelp/business.npy", allow_pickle=True)
 
 business_id = np.load("data/yelp/business_id.npz", allow_pickle=True)
 index_to_business = business_id["index_to_business"]
@@ -90,7 +92,7 @@ count_review_data = CountVecBusReviews.fit_transform(business_text)
 print(count_review_data[:4, :])
 np.save("data/yelp/business_feat", count_review_data.toarray())
 
-print("saved features and labels")
+print("saved features and labels")"""
 
 
 
@@ -229,10 +231,8 @@ def make_yelp_subset_cus(file_name, num_elem, save=True):
             user_idx = full_to_sub[subset_user_id[review["user_id"]]]
             bus_to_user_dict[review["business_id"]].add(user_idx)
             bus = business_list[bus_idx]
-            if bus["categories"]:
-                for cat in bus["categories"].split(", "):
-                    cat_dist[user_idx][cat] += 1
-                    cat_dict[cat] += 1
+            cat_dict[user_idx[str(bus["stars"])]]+=1
+            car_dict[str(bus["stars"])]+=1
     print(f'number of businesses checked {len(bus_to_user_dict.keys())}')
 
     edge_index = [[], []]
@@ -292,83 +292,81 @@ display_graph_stats(yelp_sub)
 # largest_cc = yelp_sub.subgraph(torch.tensor(list(largest_cc)))
 # np.savez("data/yelp/test_bus_largest_cc", x=largest_cc.x, y=largest_cc.y, edge_index=largest_cc.edge_index)
 
-
-
+'''
+"""
 # user stuff
 
-# user_list = np.load("data/yelp/user.npy", allow_pickle=True)
-# user_features = []
-# index_to_user = []
-# user_to_index = {}
-# for user in user_list:
-#     user_feat = []
-#     for k, v in user.items():
-#         if k == "user_id":
-#             user_to_index[v] = len(index_to_user)
-#             index_to_user.append(v)
-#         elif k == "name":
-#             continue
-#         elif k == "yelping_since":
-#             # date, probably need to split it
-#             user_feat.append(v)
-#         elif k == "friends" or k == "elite":
-#             user_feat.append(len(v))
-#         else:
-#             user_feat.append(v)
-#     user_features.append(user_feat)
-#
-# np.savez("data/yelp/user_id", index_to_user=index_to_user, user_to_index=user_to_index)
-# np.save("data/yelp/user_feat", user_features)
-
+user_list = np.load("data/yelp/user.npy", allow_pickle=True)
+user_features = []
+index_to_user = []
+user_to_index = {}
+for user in user_list:
+    user_feat = []
+    for k, v in user.items():
+        if k == "user_id":
+            user_to_index[v] = len(index_to_user)
+            index_to_user.append(v)
+        elif k == "name":
+            continue
+        elif k == "yelping_since":
+            # date, probably need to split it
+            user_feat.append(v)
+        elif k == "friends" or k == "elite":
+            user_feat.append(len(v))
+        else:
+            user_feat.append(v)
+    user_features.append(user_feat)
+np.savez("data/yelp/user_id", index_to_user=index_to_user, user_to_index=user_to_index)
+np.save("data/yelp/user_feat", user_features)
+"""
+'''
 # 1,987,897 users
-# user_list = np.load("data/yelp/user.npy", allow_pickle=True)
-# user_id = np.load("data/yelp/user_id.npz", allow_pickle=True)
-# user_feat = np.load("data/yelp/user_feat.npy", allow_pickle=True)
-#
-# index_to_user = user_id["index_to_user"]
-# user_to_index = user_id["user_to_index"]
-# user_to_index = user_to_index.item()
+user_list = np.load("data/yelp/user.npy", allow_pickle=True)
+user_id = np.load("data/yelp/user_id.npz", allow_pickle=True)
+user_feat = np.load("data/yelp/user_feat.npy", allow_pickle=True)
+index_to_user = user_id["index_to_user"]
+user_to_index = user_id["user_to_index"]
+user_to_index = user_to_index.item()
 # print(type(user_list[0]["friends"]))
 #
-# print(f'number of users: {len(index_to_user)}')
+print(f'number of users: {len(index_to_user)}')
 #
-# user_subset = set()
-# while len(user_subset) <= 3000:
-#     idx = np.random.choice(len(index_to_user))
-#     user_subset.add(idx)
-#     for friend_id in user_list[idx]["friends"].split(", "):
-#         if friend_id in user_to_index.keys():
-#             user_subset.add(user_to_index[friend_id])
-#
-# print(f'user subset has size: {len(user_subset)}')
+user_subset = set()
+while len(user_subset) <= 3000:
+    idx = np.random.choice(len(index_to_user))
+    user_subset.add(idx)
+    for friend_id in user_list[idx]["friends"].split(", "):
+        if friend_id in user_to_index.keys():
+            user_subset.add(user_to_index[friend_id])
+print(f'user subset has size: {len(user_subset)}')
 # # user subset is 3025 users
 #
-# user_subset = list(user_subset)
-# user_id_subset = {}
-# user_feat_subset = []
-# for user in user_subset:
-#     user_feat_subset.append(user_feat[user])
-#     user_id_subset[index_to_user[user]] = user
+user_subset = list(user_subset)
+user_id_subset = {}
+user_feat_subset = []
+for user in user_subset:
+    user_feat_subset.append(user_feat[user])
+    user_id_subset[index_to_user[user]] = user
 #
 #
-# np.savez("data/yelp/user_subset", user_feat=user_feat_subset, user_id=user_id_subset, user=user_subset)
+np.savez("data/yelp/user_subset", user_feat=user_feat_subset, user_id=user_id_subset, user=user_subset)
+'''
+'''
+user_subset = np.load("data/yelp/user_subset.npz", allow_pickle=True)
+user_feat = user_subset["user_feat"].tolist()
+user_id = user_subset["user_id"].item()
+users = user_subset["user"]
+mask = np.ones(len(user_feat[0]), dtype=bool)
+mask[1] = False
+for i in range(len(user_feat)):
+    user_feat[i] = np.array(user_feat[i])[mask]
+    for j in range(user_feat[i].size):
+        user_feat[i][j] = float(user_feat[i][j])
+    if i < 10:
+        print(user_feat[i])
+np.savez("data/yelp/user_subset", user_feat=user_feat, user_id=user_id, user=users)
+'''
 
-# user_subset = np.load("data/yelp/user_subset.npz", allow_pickle=True)
-# user_feat = user_subset["user_feat"].tolist()
-# user_id = user_subset["user_id"].item()
-# users = user_subset["user"]
-# mask = np.ones(len(user_feat[0]), dtype=bool)
-# mask[1] = False
-# for i in range(len(user_feat)):
-#     user_feat[i] = np.array(user_feat[i])[mask]
-#     for j in range(user_feat[i].size):
-#         user_feat[i][j] = float(user_feat[i][j])
-#     if i < 10:
-#         print(user_feat[i])
-
-# np.savez("data/yelp/user_subset", user_feat=user_feat, user_id=user_id, user=users)
-
-"""
 user_subset = np.load("data/yelp/user_subset.npz", allow_pickle=True)
 user_feat = user_subset["user_feat"].astype(float)
 user_id = user_subset["user_id"].item()
@@ -378,6 +376,7 @@ business_list = np.load("data/yelp/business.npy", allow_pickle=True)
 business_id = np.load("data/yelp/business_id.npz", allow_pickle=True)
 index_to_business = business_id["index_to_business"]
 business_to_index = business_id["business_to_index"].item()
+
 
 # map full set indexes to subset indexes
 full_to_sub = {}
@@ -396,15 +395,43 @@ for review in review_list:
         user_idx = full_to_sub[user_id[review["user_id"]]]
         bus_to_user_dict[review["business_id"]].add(user_idx)
         bus = business_list[bus_idx]
-        if bus["categories"]:
+        '''if bus["categories"]:
             for cat in bus["categories"].split(", "):
                 cat_dist[user_idx][cat] += 1
-                cat_set.add(cat)
-print("Business to User dictionary")
+                cat_set.add(cat)'''
+        cat_dist[user_idx][str(bus["stars"])]+=1
+        cat_set.add(str(bus["stars"]))
+print("Business to User dictionary through review")
 print(list(bus_to_user_dict.items())[:5])
+
+count = 0
+for review in review_list:
+    if review["business_id"] in business_to_index.keys():
+        count+=1
+print("number of edgesRB",count)
+
+
 
 print("Category distribution list")
 print(cat_dist[:5])
+#print(cat_dist.shape)
+tip_list = np.load("data/yelp/tip.npy", allow_pickle=True)
+#cat_dist = [defaultdict(int) for _ in range(users.size)]
+#cat_set = set()
+bus_to_user_dict_tip = defaultdict(set)
+for tip in tip_list:
+    if tip["user_id"] in user_id.keys() and tip["business_id"] in business_to_index.keys():
+        bus_idx = business_to_index[tip["business_id"]]
+        user_idx = full_to_sub[user_id[tip["user_id"]]]
+        bus_to_user_dict_tip[tip["business_id"]].add(user_idx)
+print("Business to User dictionary through tip")
+print(list(bus_to_user_dict_tip.items())[:5])
+
+count = 0
+for tip in tip_list:
+    if tip["user_id"] in user_id.keys():
+        count+=1
+print("number of edgesUT",count)
 
 edge_index = [[], []]
 for user_set in bus_to_user_dict.values():
@@ -430,6 +457,33 @@ print("adjacency matrix post normalization")
 print(adj)
 edge_index = geo.utils.dense_to_sparse(adj)[0]
 
+edge_index_tip = [[], []]
+for user_set in bus_to_user_dict_tip.values():
+    user_set = list(user_set)
+    for i in range(len(user_set) - 1):
+        for j in range(i + 1, len(user_set)):
+            edge_index_tip[0].append(user_set[i])
+            edge_index_tip[1].append(user_set[j])
+# fix edge_index by removing repeats and self edges
+print("edge index pre tensor transformation")
+print(edge_index_tip)
+edge_index_tip = torch.tensor(edge_index_tip)
+print("edge index as tensor")
+print(edge_index_tip)
+adj2 = geo.utils.to_dense_adj(edge_index_tip)
+adj2 = adj2.squeeze()
+print("Adjacency Matrix")
+print(adj2)
+num_nodes2 = adj2.size(dim=0)
+adj2[adj2 != 0] = 1
+adj2 = torch.sub(adj2, torch.eye(num_nodes2))
+print("adjacency matrix post normalization")
+print(adj2)
+edge_index_tip = geo.utils.dense_to_sparse(adj2)[0]
+
+
+
+
 cat_list = list(cat_set)
 cat_to_index = {}
 i = 0
@@ -445,8 +499,8 @@ for i in range(users.size):
     cat_dist_final[i, :] = cat_dist_final[i, :] / tot
     if i < 3:
         print(cat_dist_final[i, :])
+print(cat_dist_final.shape)
+print(user_feat.shape)
+#np.savez("data/yelp/yelp_subset_graph", x=user_feat, y=cat_dist_final, edge_index=edge_index,edge_index2=edge_index_tip)
 
-np.savez("data/yelp/yelp_subset_graph", x=user_feat, y=cat_dist_final, edge_index=edge_index)
-"""
 
-'''

@@ -4,7 +4,7 @@ from scipy.spatial import distance
 from utils_ import clark,intersection,from_edge_index_to_adj,gcn_norm,adj_norm
 # from utils_mugcn_pre import *
 from load_data_transformer import *
-from model import Gtransformerblock
+from model_HAN import Gtransformerblock
 import dgl
 import datetime
 import errno
@@ -142,7 +142,8 @@ def main(args):
         adj_list.append(gcn_norm(from_edge_index_to_adj(g[1].to("cuda:0")).fill_diagonal_(0)))
         adj_list_origin.append(from_edge_index_to_adj(g[0].to("cuda:0")).fill_diagonal_(0))
         adj_list_origin.append(from_edge_index_to_adj(g[1].to("cuda:0")).fill_diagonal_(0))
-    
+    for i in range(len(adj_list_origin)):
+        print("# of edges",torch.sum(adj_list_origin[i]))
     #print(adj_list[0].shape)
     #print("num_heads",len(adj_list))
     # meta_paths = [['AP','PA'],['AP','PC','CP','PA']]
@@ -183,28 +184,29 @@ def main(args):
     #loss_fcn = torch.nn.CrossEntropyLoss()
     loss_fcn = torch.nn.KLDivLoss(reduction='batchmean')
     optimizer = torch.optim.Adam(
-        model.parameters(), lr=0.1, weight_decay=0
+        model.parameters(), lr=0.005, weight_decay=0
     )
-    for epoch in range(1000):
+    for epoch in range(3000):
         model.train()
         logits = model.forward(adj_list, features)
         loss = loss_fcn((logits[train_mask]+1e-9).log(), labels[train_mask]+1e-9)
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
-        train_acc, train_micro_f1, train_macro_f1,train_score_intersection = score(
-            logits[train_mask], labels[train_mask]
-        )
-        val_loss, val_acc, val_micro_f1, val_macro_f1,val_score_intersection = evaluate(
+        #train_acc, train_micro_f1, train_macro_f1,train_score_intersection = score(
+        #    logits[train_mask], labels[train_mask]
+        #)
+        '''val_loss, val_acc, val_micro_f1, val_macro_f1,val_score_intersection = evaluate(
             model, adj_list, features, labels, val_mask, loss_fcn
-        )
+        )'''
+        val_loss = loss_fcn((logits[val_mask]+1e-9).log(),labels[val_mask]+1e-9)
         '''test_loss, test_acc, test_micro_f1, test_macro_f1,test_score_intersection = evaluate(
             model, adj_list, features, labels, test_mask, loss_fcn
         )'''
         early_stop = stopper.step(val_loss.data.item(), model)
         #early_stop = stopper.step(val_score_intersection,model)
-
-        print(
+        print(val_loss)
+        '''print(
             "Epoch {:d} | Train Loss {:.4f} | Train Micro f1 {:.4f} | Train Macro f1 {:.4f} | "
             "Val Loss {:.4f} | Val Micro f1 {:.4f} | Val Macro f1 {:.4f}".format(
                 epoch + 1,
@@ -215,7 +217,7 @@ def main(args):
                 val_micro_f1,
                 val_macro_f1,
             )
-        )
+        )'''
         #print(test_loss)
         if early_stop:
             break
@@ -246,7 +248,7 @@ if __name__ == "__main__":
     parser.add_argument('--layer_norm',type=bool,default=True)
     parser.add_argument('--residual',type=bool,default=True)
     parser.add_argument('--use_bias',type=bool,default=True)
-    parser.add_argument('--patience',type=int,default=50)
+    parser.add_argument('--patience',type=int,default=200)
     parser.add_argument('--seed',type=int,default=0)
     parser.add_argument('--hidden',type=int,default=64)
     args = parser.parse_args()

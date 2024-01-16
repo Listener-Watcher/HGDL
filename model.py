@@ -13,9 +13,9 @@ from sklearn.metrics import f1_score
 from scipy.spatial import distance
 from utils_ import clark,intersection,from_edge_index_to_adj
 from torch.nn.parameter import Parameter
+#eps = 1e-14
+
 eps = 1e-9
-
-
 
 def score(logits, labels):
     _, indices = torch.max(logits, dim=1)
@@ -50,18 +50,21 @@ def score(logits, labels):
 def evaluate(model, g, g2,features, labels, mask, loss_func):
     model.eval()
     with torch.no_grad():
+        #logits,_ = model(g, features,g2)
+        logits = model(g,features)
+    loss = loss_func((logits[mask]+1e-9).log(), labels[mask]+1e-9)
+    accuracy, micro_f1, macro_f1,score_intersection = score(logits[mask], labels[mask])
+
+    return loss, accuracy, micro_f1, macro_f1,score_intersection
+def evaluate2(model, g, g2,features, labels, mask, loss_func):
+    model.eval()
+    with torch.no_grad():
         logits,_ = model(g, features,g2)
     loss = loss_func((logits[mask]+1e-9).log(), labels[mask]+1e-9)
     accuracy, micro_f1, macro_f1,score_intersection = score(logits[mask], labels[mask])
 
     return loss, accuracy, micro_f1, macro_f1,score_intersection
 
-
-def sparse_dense_mul(s, d):
-  i = s._indices()
-  v = s._values()
-  dv = d[i[0,:], i[1,:]]  # get values from relevant entries of dense matrix
-  return torch.sparse.FloatTensor(i, v * dv, s.size())
 class SemanticAttention(nn.Module):
     def __init__(self, in_size, hidden_size=4):
         super(SemanticAttention, self).__init__()
@@ -145,7 +148,7 @@ class GCN_attention(nn.Module):
         attention = F.softmax(A_tilde,dim=1)   
         #attention = torch.sparse.softmax(A_tilde,dim=1)     
         X_tilde = torch.matmul(gcn_norm(attention),V_h)
-        X_tilde = self.layer_norm(X_tilde)
+        X_tilde = F.relu(X_tilde)
         z = self.gcn2(X_tilde,adj)
         return F.softmax(z,dim=1)
     @torch.no_grad()
@@ -158,12 +161,37 @@ class GCN_attention(nn.Module):
         A_tilde = torch.mul(adj.to_dense(),torch.matmul(Q_h,K_h))
         attention = F.softmax(A_tilde,dim=1)
         X_tilde = torch.matmul(gcn_norm(attention),V_h)
-        X_tilde = self.layer_norm(X_tilde)
+        X_tilde = F.relu(X_tilde)
+        #z = self.gcn2(X_tilde,adj)
+        return X_tilde
+        #return F.softmax(z,dim=1)
+        
+        
+class GCN_attention2(nn.Module):
+    def __init__(self, nfeat, nhid,nclass,dropout,num_layers):
+        super(GCN_attention2, self).__init__()
+        self.Q = nn.Linear(nhid,nhid,bias=True)
+        self.K = nn.Linear(nhid,nhid,bias=True)
+        self.V = nn.Linear(nhid,nhid,bias=True)
+        self.gcn1=GraphConvolution(nfeat,nhid)
+        self.gcn2=GraphConvolution(nhid, nclass)
+        self.gcn = GraphConvolution(nhid, nhid)
+        self.layer_norm = nn.LayerNorm(nhid)
+        self.dropout = dropout
+    def forward(self,adj,x):
+        x = F.relu(self.gcn1(x,adj))
+        '''Q_h = self.Q(x)
+        K_h = torch.transpose(self.K(x),0,1)
+        V_h = self.V(x)
+        #A_tilde = sparse_dense_mul(adj,torch.matmul(Q_h,K_h))
+        A_tilde = torch.mul(adj.to_dense(),torch.matmul(Q_h,K_h))
+        attention = F.softmax(A_tilde,dim=1)   
+        #attention = torch.sparse.softmax(A_tilde,dim=1)     
+        X_tilde = torch.matmul(gcn_norm(attention),V_h)
+        X_tilde = F.relu(X_tilde)'''
+        X_tilde = F.relu(self.gcn(x,adj))
         z = self.gcn2(X_tilde,adj)
         return F.softmax(z,dim=1)
-        
-        
-        
         
 class GCN_attention_v2(nn.Module):
     def __init__(self, nfeat, nhid,nclass,dropout,num_layers,adj_list,adj_list_origin):
@@ -175,12 +203,82 @@ class GCN_attention_v2(nn.Module):
         self.gcn2=GraphConvolution(nhid, nclass)
         self.layer_norm = nn.LayerNorm(nhid)
         #self.weight = Parameter(torch.FloatTensor(adj_list[0].shape[0],3)).to("cuda:0")
-        self.atten = nn.Linear(adj_list[0].shape[0],1)
+        self.atten = nn.Linear(adj_list[0].shape[0],40)
+        self.atten2 = nn.Linear(adj_list[0].shape[0],40)
+        #self.atten3 = nn.Linear(adj_list[0].shape[0],5)
+        self.agg = nn.Linear(80,len(adj_list))
         self.dropout = dropout
         #self.memory_unit = torch.FloatTensor([[1/3,1/3,1/3,0,1,0]]*adj_list[0].shape[0]).to('cuda:0')
-        self.memory_unit = torch.FloatTensor([[1/2,1/2]]*adj_list[0].shape[0]).to('cuda:0')
+        self.memory_unit = torch.FloatTensor([[0,1]]*adj_list[0].shape[0]).to('cuda:0')
         #self.memory_adj = torch.FloatTensor(adj_list[0].shape).to('cuda:0')
-        self.gcn=GraphConvolution(nhid,nhid)
+        self.gcn = GraphConvolution(nhid,nhid)
+    def forward(self,adj_list,x,adj_list_origin):
+        #self.weight = torch.softmax(self.weight,dim=1)
+        #print("weight",self.weight)
+        Adj_kernel = []
+        for i in range(len(adj_list)):
+            Adj_kernel.append(adj_list[i])
+        z1 = self.atten(Adj_kernel[0])
+        z2 = self.atten2(Adj_kernel[1])
+        #z3 = self.atten3(Adj_kernel[2])
+        #z4 = torch.stack((z1,z2,z3),dim=1).squeeze()
+        #print(torch.cat((z1,z2),dim=1).shape)
+        #z4 = ((self.agg(torch.cat((z1,z2,z3),dim=1))))
+        z4 = self.agg(torch.cat((z1,z2),dim=1))
+        #print("stack shape",z4.shape)
+        nz = torch.softmax(z4,dim=1)
+        uniform = torch.FloatTensor([[0,1]]*adj_list[0].shape[0]).to('cuda:0')
+        #uniform = torch.FloatTensor([[0.5,0.5]]*adj_list[0].shape[0]).to('cuda:0')
+        #print("nz away from uniform",torch.sum(torch.abs(nz-uniform)))
+        #print("nz update",torch.sum(torch.abs(nz-self.memory_unit)))
+        #print("nz away from 0,1",torch.sum(nz[:,1]>0.5)/nz.shape[0])
+        print(nz)
+        self.memory_unit = nz
+        #adj = nz[:,0]*adj_list[0]+nz[:,1]*adj_list[1]+nz[:,2]*adj_list[2]
+        adj = nz[:,0]*adj_list[0]+nz[:,1]*adj_list[1]
+        #adj = gcn_norm(adj)
+        #adj_sparse = adj.to_sparse()
+        adj = adj.to_sparse()
+        x = F.relu(self.gcn1(x,adj))
+        """
+        Q_h = self.Q(x)
+        K_h = torch.transpose(self.K(x),0,1)
+        V_h = self.V(x)
+        #A_tilde = sparse_dense_mul(adj,torch.matmul(Q_h,K_h))
+        A_tilde = torch.mul(adj.to_dense(),torch.matmul(Q_h,K_h))
+        attention = F.softmax(A_tilde,dim=1)   
+        #attention = torch.sparse.softmax(A_tilde,dim=1)     
+        X_tilde = torch.matmul(gcn_norm(attention),V_h)
+        X_tilde = F.relu((X_tilde))
+        #X_tilde = self.layer_norm(X_tilde)
+        """
+        random_mask = torch.rand(adj_list[0].shape,device="cuda:0")<0.3
+        X_tilde = F.relu(self.gcn(x,torch.mul(adj.to_dense(),random_mask).to_sparse()))
+        #X_tilde = F.relu(self.gcn(x,adj))
+        z = self.gcn2(X_tilde,adj)
+        nj = torch.softmax(z4,dim=1)
+        return F.softmax(z,dim=1),nj
+  
+        
+class GCN_attention_v3(nn.Module):
+    def __init__(self, nfeat, nhid,nclass,dropout,num_layers,adj_list,adj_list_origin):
+        super(GCN_attention_v3, self).__init__()
+        self.Q = nn.Linear(nhid,nhid,bias=True)
+        self.K = nn.Linear(nhid,nhid,bias=True)
+        self.V = nn.Linear(nhid,nhid,bias=True)
+        self.gcn1=GraphConvolution(nfeat,nhid)
+        self.gcn2=GraphConvolution(nhid, nclass)
+        self.layer_norm = nn.LayerNorm(nhid)
+        #self.weight = Parameter(torch.FloatTensor(adj_list[0].shape[0],3)).to("cuda:0")
+        self.atten = nn.Linear(adj_list[0].shape[0],40)
+        self.atten2 = nn.Linear(adj_list[0].shape[0],40)
+        #self.atten3 = nn.Linear(adj_list[0].shape[0],5)
+        self.agg = nn.Linear(80,len(adj_list))
+        self.dropout = dropout
+        #self.memory_unit = torch.FloatTensor([[1/3,1/3,1/3,0,1,0]]*adj_list[0].shape[0]).to('cuda:0')
+        self.memory_unit = torch.FloatTensor([[0,1]]*adj_list[0].shape[0]).to('cuda:0')
+        #self.memory_adj = torch.FloatTensor(adj_list[0].shape).to('cuda:0')
+        self.gcn = GraphConvolution(nhid,nhid)
     def forward(self,adj_list,x,adj_list_origin):
         #self.weight = torch.softmax(self.weight,dim=1)
         #print("weight",self.weight)
@@ -189,25 +287,28 @@ class GCN_attention_v2(nn.Module):
             #Adj_kernel.append(torch.stack((adj_list[i],adj_list_origin[i]),dim=1))
             Adj_kernel.append(adj_list[i])
         z1 = self.atten(Adj_kernel[0])
-        z2 = self.atten(Adj_kernel[1])
-        #z3 = self.atten(Adj_kernel[2])
+        z2 = self.atten2(Adj_kernel[1])
+        #z3 = self.atten3(Adj_kernel[2])
         #z4 = torch.stack((z1,z2,z3),dim=1).squeeze()
-        z4 = torch.stack((z1,z2),dim=1).squeeze()
+        #print(torch.cat((z1,z2),dim=1).shape)
+        #z4 = ((self.agg(torch.cat((z1,z2,z3),dim=1))))
+        z4 = self.agg(torch.cat((z1,z2),dim=1))
         #print("stack shape",z4.shape)
         nz = torch.softmax(z4,dim=1)
-        #uniform = torch.FloatTensor([[1/3,1/3,1/3,0,1,0]]*adj_list[0].shape[0]).to('cuda:0')
-        uniform = torch.FloatTensor([[1/2,1/2]]*adj_list[0].shape[0]).to('cuda:0')
-        print("nz away from uniform",torch.sum(torch.abs(nz-uniform)))
-        print("nz update",torch.sum(torch.abs(nz-self.memory_unit)))
-        print(nz)
+        uniform = torch.FloatTensor([[0,1]]*adj_list[0].shape[0]).to('cuda:0')
+        #uniform = torch.FloatTensor([[0.5,0.5]]*adj_list[0].shape[0]).to('cuda:0')
+        #print("nz away from uniform",torch.sum(torch.abs(nz-uniform)))
+        #print("nz update",torch.sum(torch.abs(nz-self.memory_unit)))
+        #print("nz away from 0,1",torch.sum(nz[:,1]>0.5)/nz.shape[0])
+        #print(nz)
         self.memory_unit = nz
         #adj = nz[:,0]*adj_list[0]+nz[:,1]*adj_list[1]+nz[:,2]*adj_list[2]
         adj = nz[:,0]*adj_list[0]+nz[:,1]*adj_list[1]
         #adj = gcn_norm(adj)
+        #adj_sparse = adj.to_sparse()
         adj = adj.to_sparse()
         x = F.relu(self.gcn1(x,adj))
-        x = F.relu(self.gcn(x,adj))
-        '''Q_h = self.Q(x)
+        """Q_h = self.Q(x)
         K_h = torch.transpose(self.K(x),0,1)
         V_h = self.V(x)
         #A_tilde = sparse_dense_mul(adj,torch.matmul(Q_h,K_h))
@@ -215,12 +316,15 @@ class GCN_attention_v2(nn.Module):
         attention = F.softmax(A_tilde,dim=1)   
         #attention = torch.sparse.softmax(A_tilde,dim=1)     
         X_tilde = torch.matmul(gcn_norm(attention),V_h)
-        X_tilde = self.layer_norm(X_tilde)'''
-        #z = self.gcn2(X_tilde,adj)
-        z = self.gcn2(x,adj)
-        k = nz
-        return F.softmax(z,dim=1),k
-        
+        X_tilde = F.relu((X_tilde))
+        #X_tilde = self.layer_norm(X_tilde)
+        #random_mask = torch.rand(adj_list[0].shape,device="cuda:0")<0.9
+        """
+        X_tilde = F.relu(self.gcn(x,adj))
+        z = self.gcn2(X_tilde,adj)
+        nj = torch.softmax(z4,dim=1)
+        return F.softmax(z,dim=1),nj
+
         
         
       
@@ -395,111 +499,12 @@ class Gtransformerblock(nn.Module):
                 print("early stop")
                 break
             print("val loss",val_loss.item())'''
-            
-            
-            
-        """GAT = []
-        #Optimizer = []
-        parameters = []
-        for i in range(self.num_heads):
-            gat = GCN(in_dim, hid_dim,out_dim,dropout,1).to(self.device)
-            gat.train()
-            #optimizer = torch.optim.Adam(list(gat.parameters()),lr=0.005,weight_decay=0)
-            GAT.append(gat)
-            parameters+=list(GAT[i].parameters())
-        optimizer = torch.optim.Adam(parameters,lr=0.005,weight_decay = 0)
-        loss = KLDivLoss(reduction="batchmean")
-        #optimizer = torch.optim.Adam(list(gat.parameters()),lr=0.005,weight_decay=0)
-        best_gat = [None,None]
-        patience = 0
-        best_epoch = 0
-        #Label_corr = []
-        #Kl_loss = []
-        best_val = 100
-        weight = torch.tensor([0.9986,0.0014]).to(self.device)
-        #weight = torch.tensor([0.5,0.5]).to(self.device)
-        for epoch in range(2000):
-            optimizer.zero_grad()
-            Label_corr = []
-            Kl_loss = []
-            #Output = []
-            Kl_loss_val = []
-            for i in range(self.num_heads):
-                output = GAT[i].forward(adj_list[i].to_sparse(),features)
-                #Output.append(GAT[i].embed(adj_list[i].to_sparse(),features))
-                kl_loss = loss((output[train_mask]+eps).log(),(labels[train_mask]+eps))
-                kl_loss_val = loss((output[val_mask]+eps).log(),(labels[val_mask]+eps))
-                label_corr = torch.matmul(torch.t(output),output)
-                Label_corr.append(label_corr)
-                Kl_loss.append(kl_loss)
-                Kl_loss_val.append(kl_loss_val)
-            total_loss = sum(Kl_loss)
-            estimated_anchor = torch.zeros(Label_corr[0].shape).to(self.device)
-            print("estimated_anchor shape",estimated_anchor.shape)
-            for i in range(self.num_heads):
-                estimated_anchor+= weight[i]*Label_corr[i]
-            consistency_loss = torch.zeros(1).to(self.device)
-            #for i in range(self.num_heads):
-            #    consistency_loss+=torch.linalg.matrix_norm(torch.abs(Label_corr[i]-estimated_anchor),ord='fro')
-            for i in range(self.num_heads):
-                consistency_loss+=torch.linalg.matrix_norm(torch.abs(Label_corr[i]),ord='fro')
-            print("consistency_loss",consistency_loss.item())
-            #(Kl_loss[0]+0.00001*consistency_loss-0.001*divergence_loss).backward(retain_graph=True)
-            #(Kl_loss[1]+0.00001*consistency_loss-0.001*divergence_loss).backward()
-            #(Kl_loss[0]-0.001*divergence_loss).backward(retain_graph=True)
-            #(Kl_loss[1]-0.001*divergence_loss).backward()           
-            #(Kl_loss[0]+0.00001*consistency_loss).backward(retain_graph=True)
-            #(Kl_loss[1]+0.00001*consistency_loss).backward()           
-            #print("consistency_loss",consistency_loss)
-            #print("divergence_loss",divergence_loss)
-            '''estimated_anchor = torch.zeros(label_corr[0].shape).to(self.device)
-            for i in range(self.num_heads):
-                estimated_anchor+= weight[i]*label_corr[i]
-            consistency_loss = torch.zeros(1).to(self.device)
-            for i in range(self.num_heads):
-                consistency_loss+=torch.linalg.matrix_norm(torch.abs(Label_corr[i]-estimated_anchor),ord='fro')
-            print("consistency_loss",consistency_loss.item())'''
-            #print(0.00001*torch.linalg.matrix_norm(torch.abs(Label_corr[ic]-Label_corr[jc]),ord='fro').item())
-            #(Kl_loss[0]+0.00001*consistency_loss-0.001*divergence_loss).backward(retain_graph=True)
-            #(Kl_loss[1]+0.00001*consistency_loss-0.001*divergence_loss).backward()
-            #(Kl_loss[0]-0.001*divergence_loss).backward(retain_graph=True)
-            #(Kl_loss[1]-0.001*divergence_loss).backward()           
-            #(Kl_loss[0]+0.00001*consistency_loss).backward(retain_graph=True)
-            #(Kl_loss[1]+0.00001*consistency_loss).backward()           
-            #print("consistency_loss",consistency_loss)
-            #print("divergence_loss",divergence_loss)
-            (Kl_loss[0]+0.0001*consistency_loss).backward(retain_graph=True)
-            (Kl_loss[1]+0.0001*consistency_loss).backward()
-            #Kl_loss[0].backward()
-            #Kl_loss[1].backward()
-            optimizer.step()
-            #val_loss = evaluate(new_g,features,labels,val_mask,gat)
-            val_loss = sum(Kl_loss_val)
-            #print("without reg:",val_loss)
-            #val_loss = val_loss+0.0001*consistency_loss-0.0001*divergence_loss
-            if best_val>val_loss:
-                best_val = val_loss
-                best_gat[0] = copy.deepcopy(GAT[0].state_dict())
-                best_gat[1] = copy.deepcopy(GAT[1].state_dict())
-                best_epoch = epoch
-                patience = 0
-            else:
-            	patience+=1
-            if patience>=100:
-            	print("best_val",best_val)
-            	print("early stop")
-            	break
-            print("best val loss:",best_val)
-            print("epoch",epoch)
-            print("training loss",total_loss.item())
-        GAT = []
-        for i in range(self.num_heads):
-            gat = GCN(in_dim, hid_dim,out_dim,dropout,1).to(self.device)
-            gat.load_state_dict(best_gat[i])
-            GAT.append(gat)
-        self.mugcn_layers = GAT"""
+        #print(torch.sum(adj_list_origin[0],axis=1).shape)
+        print("adj 0",torch.mean(torch.abs(torch.sum(adj_list_origin[1],axis=1)-torch.sum(adj_list_origin[0],axis=1))))
+        print("adj norm",torch.mean(torch.sum(adj_list[0],axis=1)))
+        print("adj norm",torch.mean(torch.sum(adj_list[1],axis=1)))
+        #print("adj norm",torch.mean(torch.sum(adj_list[2],axis=1)))
         
-
         gat = GCN_attention_v2(in_dim,hid_dim,out_dim,dropout,1,adj_list,adj_list_origin).to(self.device)
         gat.train()
         optimizer = torch.optim.Adam(list(gat.parameters()),lr=0.005,weight_decay=0)
@@ -509,19 +514,23 @@ class Gtransformerblock(nn.Module):
         best_model = None
         #memory = torch.FloatTensor([[1/3,1/3,1/3]]*adj_list[0].shape[0]).to('cuda:0')
         #memory_loss_val = 100
-        for epoch in range(1000):
+        for epoch in range(2000):
             optimizer.zero_grad()
-            output,reg = gat.forward(adj_list,features,adj_list_origin)
+            output,nj = gat.forward(adj_list,features,adj_list_origin)
             kl_loss = loss((output[train_mask]+eps).log(),(labels[train_mask]+eps))
             kl_loss_val = loss((output[val_mask]+eps).log(),(labels[val_mask]+eps))
+            #kl_loss = loss((output[train_mask]).log(),(labels[train_mask]))
+            #kl_loss_val = loss((output[val_mask]).log(),(labels[val_mask]))
+            #uniform = torch.FloatTensor([[1/3,1/3,1/3]]*adj_list[0].shape[0]).to('cuda:0')
+            uniform = torch.FloatTensor([[0.5,0.5]]*adj_list[0].shape[0]).to('cuda:0')
             #kl_loss.backward(retain_graph=True)
             #if kl_loss_val<memory_loss_val:
             #    (kl_loss+torch.sum(torch.abs(memory-nz))).backward()
             #else:
             #    kl_loss.backward()
-            uniform = torch.FloatTensor([[1/2,1/2]]*adj_list[0].shape[0]).to('cuda:0')
-            reg_loss = torch.sum(torch.abs(reg-uniform))
-            (kl_loss+0.01*reg_loss).backward()
+            con_loss = torch.sum(torch.abs(nj-uniform))
+            (kl_loss-0.0001*con_loss).backward()
+            #kl_loss.backward()
             #memory=nz
             optimizer.step()
             if kl_loss_val<best_loss:
@@ -531,13 +540,71 @@ class Gtransformerblock(nn.Module):
             else:
                 patience+=1
                 print("patience:",patience)
-            if patience>50:
+            if patience>150:
                 break
             print("val loss",kl_loss_val.item())
+        print("best val loss",best_loss.item())
+        #torch.save(best_model,"DBLP_sample_our_method.pth")
+        gat = GCN_attention_v3(in_dim,hid_dim,out_dim,dropout,1,adj_list,adj_list_origin).to(self.device)
+        gat.train()
         gat.load_state_dict(best_model)
-        test_loss, test_acc, test_micro_f1, test_macro_f1,_ = evaluate(gat, adj_list, adj_list_origin,features, labels, val_mask, loss)
+        print("attention new method")
+        test_loss, test_acc, test_micro_f1, test_macro_f1,_ = evaluate2(gat, adj_list, adj_list_origin,features, labels, test_mask, loss)
         print("Test loss {:.4f} | Test Micro f1 {:.4f} | Test Macro f1 {:.4f}".format(test_loss.item(), test_micro_f1, test_macro_f1))
-        '''GAT = []
+        
+        
+        
+        '''
+        hid_dim=16
+        gat2 = GCN_attention_v3(in_dim,hid_dim,out_dim,dropout,1,adj_list,adj_list_origin).to(self.device)
+        gat2.train()
+        optimizer = torch.optim.Adam(list(gat2.parameters()),lr=0.005,weight_decay=0)
+        loss = KLDivLoss(reduction="batchmean")
+        best_loss = 100
+        patience = 0
+        best_model = None
+        #memory = torch.FloatTensor([[1/3,1/3,1/3]]*adj_list[0].shape[0]).to('cuda:0')
+        #memory_loss_val = 100
+        for epoch in range(4000):
+            optimizer.zero_grad()
+            output,nj = gat2.forward(adj_list,features,adj_list_origin)
+            kl_loss = loss((output[train_mask]+eps).log(),(labels[train_mask]+eps))
+            kl_loss_val = loss((output[val_mask]+eps).log(),(labels[val_mask]+eps))
+            #kl_loss = loss((output[train_mask]).log(),(labels[train_mask]))
+            #kl_loss_val = loss((output[val_mask]).log(),(labels[val_mask]))
+            #uniform = torch.FloatTensor([[1/3,1/3,1/3]]*adj_list[0].shape[0]).to('cuda:0')
+            uniform = torch.FloatTensor([[0.5,0.5]]*adj_list[0].shape[0]).to('cuda:0')
+            #kl_loss.backward(retain_graph=True)
+            #if kl_loss_val<memory_loss_val:
+            #    (kl_loss+torch.sum(torch.abs(memory-nz))).backward()
+            #else:
+            #    kl_loss.backward()
+            con_loss = torch.sum(torch.abs(nj-uniform))
+            (kl_loss-0.0001*con_loss).backward()
+            #kl_loss.backward()
+            #memory=nz
+            optimizer.step()
+            if kl_loss_val<best_loss:
+                best_loss = kl_loss_val
+                patience = 0
+                best_model= copy.deepcopy(gat2.state_dict())
+            else:
+                patience+=1
+                #print("patience:",patience)
+            if patience>300:
+                break
+            #print("val loss",kl_loss_val.item())
+        print("best val loss",best_loss.item())
+        gat2.load_state_dict(best_model)
+        print("GCN new method")
+        test_loss, test_acc, test_micro_f1, test_macro_f1,_ = evaluate2(gat2, adj_list, adj_list_origin,features, labels, test_mask, loss)
+        print("Test loss {:.4f} | Test Micro f1 {:.4f} | Test Macro f1 {:.4f}".format(test_loss.item(), test_micro_f1, test_macro_f1))
+        '''
+        
+        
+        
+        """
+        GAT = []
         parameters = []
         #Optimizer = []
         for i in range(self.num_heads):
@@ -556,9 +623,9 @@ class Gtransformerblock(nn.Module):
         #Label_corr = []
         #Kl_loss = []
         best_val = 100
-        weight = torch.tensor([1,0]).to(self.device)
+        #weight = torch.tensor([1,0]).to(self.device)
         #weight = torch.tensor([0.33333,0.33333,0.33333]).to(self.device)
-        for epoch in range(1000):
+        for epoch in range(2000):
             Label_corr = []
             #Label_corr2 = []
             Kl_loss = []
@@ -571,73 +638,24 @@ class Gtransformerblock(nn.Module):
             for i in range(self.num_heads):
                 #Optimizer[i].zero_grad()
                 output = GAT[i].forward(adj_list[i].to_sparse(),features)
-                #Output.append(GAT[i].embed(adj_list[i].to_sparse(),features))
-                Output.append(output)
-                print("max index",torch.argmax(output,dim=1))
-                mask = (torch.argmax(output[train_mask],dim=1)==torch.argmax(labels[train_mask],dim=1))
-                Indices.append(mask)
-                print(torch.sum(mask).item()/mask.shape[0])
+
                 kl_loss = loss((output[train_mask]+eps).log(),(labels[train_mask]+eps))
                 kl_loss_val = loss((output[val_mask]+eps).log(),(labels[val_mask]+eps))
-                #label_corr = F.softmax(torch.matmul(torch.t(output[train_mask][mask]),output[train_mask][mask]),dim=1)
-                #label_corr = output
-                #Label_corr.append(label_corr)
-                #Label_corr2.append(torch.matmul(torch.t(torch.matmul(adj_list[i],output)),torch.matmul(adj_list[i],output)))
+
                 Kl_loss.append(kl_loss)
                 Kl_loss_val.append(kl_loss_val)
-            anchor_mask = torch.logical_and(Indices[0],Indices[1])
-            print("total correct for model 2",torch.sum(Indices[1]))
-            print("overlapped",torch.sum(anchor_mask))
-            nonoverlap_mask = []
-            for i in range(self.num_heads):
-                mask = torch.logical_xor(Indices[i],anchor_mask)
-                nonoverlap_mask.append(mask)
-                Label_corr.append(F.softmax(torch.matmul(torch.t(Output[i][train_mask][mask]),Output[i][train_mask][mask]),dim=1))
-            #Label_corr.append(torch.matmul(torch.t(Output[0]),Output[1]))
+
             total_loss = sum(Kl_loss)
-            #print("Label corr matrix:",Label_corr)
-            #estimated_anchor = torch.zeros(Label_corr[0].shape).to(self.device)
-            #print("estimated_anchor shape",estimated_anchor.shape)
-            #for i in range(len(Label_corr)):
-            #    estimated_anchor+= weight[i]*Label_corr[i]
-            #consistency_loss = torch.zeros(1).to(self.device)
-            consistency_loss = torch.linalg.matrix_norm(torch.abs(F.softmax(torch.matmul(torch.t(Output[0][train_mask][nonoverlap_mask[1]]),Output[0][train_mask][nonoverlap_mask[1]]),dim=1)-Label_corr[1]),ord='fro')
-            Consistency_loss.append(consistency_loss)
-            consistency_loss = torch.linalg.matrix_norm(torch.abs(F.softmax(torch.matmul(torch.t(Output[1][train_mask][nonoverlap_mask[0]]),Output[1][train_mask][nonoverlap_mask[0]]),dim=1)-Label_corr[0]),ord='fro')
-            Consistency_loss.append(consistency_loss)
-            #Consistency_loss = []
-            #for i in range(self.num_heads):
-            #    consistency_loss=torch.linalg.matrix_norm(torch.abs(Label_corr[i]-Label_corr2[i]),ord='fro')
-            #    Consistency_loss.append(consistency_loss)
-            #print("consistency_loss",Consistency_loss[0])
-            #print("consistency_loss",Consistency_loss[0].item())
-            #print("consistency_loss",Consistency_loss[1].item())
-            #print(0.00001*torch.linalg.matrix_norm(torch.abs(Label_corr[ic]-Label_corr[jc]),ord='fro').item())
-            #(Kl_loss[0]+0.00001*consistency_loss-0.001*divergence_loss).backward(retain_graph=True)
-            #(Kl_loss[1]+0.00001*consistency_loss-0.001*divergence_loss).backward()
-            #(Kl_loss[0]-0.001*divergence_loss).backward(retain_graph=True)
-            #(Kl_loss[1]-0.001*divergence_loss).backward()           
-            #(Kl_loss[0]+0.00001*consistency_loss).backward(retain_graph=True)
-            #(Kl_loss[1]+0.00001*consistency_loss).backward()           
-            #print("consistency_loss",consistency_loss)
-            #print("divergence_loss",divergence_loss)
-            #(Kl_loss[0]+0.5*Consistency_loss[0]).backward(retain_graph=True)
-            #(Kl_loss[1]+0.5*Consistency_loss[1]).backward()
-            (Kl_loss[0]+0.1*Consistency_loss[0]).backward(retain_graph=True)
-            (Kl_loss[1]+0.1*Consistency_loss[1]).backward()
-            #(Kl_loss[0]).backward()
+            for i in range(self.num_heads):
+                (Kl_loss[i]).backward()
             #(Kl_loss[1]).backward()
+            #(Kl_loss[2]).backward()
             optimizer.step()
-            #Optimizer[0].step()
-            #Optimizer[1].step()
-            #val_loss = evaluate(new_g,features,labels,val_mask,gat)
             val_loss = sum(Kl_loss_val)
-            #print("without reg:",val_loss)
-            #val_loss = val_loss+0.0001*consistency_loss-0.0001*divergence_loss
             if best_val>val_loss:
                 best_val = val_loss
-                best_gat[0] = copy.deepcopy(GAT[0].state_dict())
-                best_gat[1] = copy.deepcopy(GAT[1].state_dict())
+                for i in range(self.num_heads):
+                    best_gat[i] = copy.deepcopy(GAT[i].state_dict())
                 best_epoch = epoch
                 patience = 0
             else:
@@ -647,24 +665,126 @@ class Gtransformerblock(nn.Module):
             	print("early stop")
             	break
             print("best val loss:",best_val)
-            print("val loss 1:",Kl_loss_val[0])
-            print("val loss 2:",Kl_loss_val[1])
-            print("epoch",epoch)
+            for i in range(self.num_heads):
+               print("val loss:",Kl_loss_val[i])
+            print(patience)
+            #print("epoch",epoch)
             #print("training loss",total_loss.item())
-        '''
+        
         GAT = []
         for i in range(self.num_heads):
             gat = GCN_attention(in_dim, hid_dim,out_dim,dropout,1).to(self.device)
-            #gat.load_state_dict(best_gat[i])
+            gat.load_state_dict(best_gat[i])
             GAT.append(gat)
-        #torch.save(GAT[0].state_dict(),"GAT0_APA_1000_con.pth")
-        #torch.save(GAT[1].state_dict(),"GAT1_APA_1000_con.pth")
-        #GAT[0].load_state_dict(torch.load("GAT0_APA_1000.pth"))
-        #GAT[1].load_state_dict(torch.load("GAT1_APA_1000.pth"))
+            #torch.save(GAT[i].state_dict(),"ACM_attention_single"+str(i)+".pth")
+        '''GAT = []
+        for i in range(self.num_heads):
+            gat = GCN_attention(in_dim, hid_dim,out_dim,dropout,1).to(self.device)
+            gat.load_state_dict(torch.load("GAT"+str(i)+"_drug_811_32_.pth"))
+            GAT.append(gat)'''
         self.mugcn_layers = GAT
+        print("Attention single case")
+        test_loss, test_acc, test_micro_f1, test_macro_f1,_ = evaluate(self.mugcn_layers[0], adj_list[0].to_sparse(), adj_list[1].to_sparse(),features, labels, test_mask, loss)
+        print("Test loss {:.4f} | Test Micro f1 {:.4f} | Test Macro f1 {:.4f}".format(test_loss.item(),
+        test_micro_f1, test_macro_f1))
+        test_loss, test_acc, test_micro_f1, test_macro_f1,_ = evaluate(self.mugcn_layers[1], adj_list[1].to_sparse(), adj_list[1].to_sparse(),features, labels, test_mask, loss)
+        print("Test loss {:.4f} | Test Micro f1 {:.4f} | Test Macro f1 {:.4f}".format(test_loss.item(),
+        test_micro_f1, test_macro_f1))
+        test_loss, test_acc, test_micro_f1, test_macro_f1,_ = evaluate(self.mugcn_layers[2], adj_list[2].to_sparse(), adj_list[2].to_sparse(),features, labels, test_mask, loss)
+        print("Test loss {:.4f} | Test Micro f1 {:.4f} | Test Macro f1 {:.4f}".format(test_loss.item(),
+        test_micro_f1, test_macro_f1))
+        """
+       
         
-        test_loss, test_acc, test_micro_f1, test_macro_f1,_ = evaluate(self.mugcn_layers[1], adj_list[1].to_sparse(), features, labels, val_mask, loss)
-        print("Test loss {:.4f} | Test Micro f1 {:.4f} | Test Macro f1 {:.4f}".format(test_loss.item(), test_micro_f1, test_macro_f1))
+        """
+        GAT = []
+        parameters = []
+        #Optimizer = []
+        for i in range(self.num_heads):
+            gat = GCN_attention2(in_dim, hid_dim,out_dim,dropout,1).to(self.device)
+            gat.train()
+            #optimizer = torch.optim.Adam(list(gat.parameters()),lr=0.005,weight_decay=0)
+            #Optimizer.append(optimizer)
+            GAT.append(gat)
+            parameters+=list(GAT[i].parameters())
+        optimizer = torch.optim.Adam(parameters,lr=0.005,weight_decay = 0)
+        loss = KLDivLoss(reduction="batchmean")
+        #optimizer = torch.optim.Adam(list(gat.parameters()),lr=0.005,weight_decay=0)
+        best_gat = [None]*self.num_heads
+        patience = 0
+        best_epoch = 0
+        #Label_corr = []
+        #Kl_loss = []
+        best_val = 100
+        for epoch in range(2000):
+            Label_corr = []
+            #Label_corr2 = []
+            Kl_loss = []
+            Output = []
+            Kl_loss_val = []
+            Consistency_loss = []
+            Indices = []
+            #random_mask = torch.rand(self.features.shape[0], device="cuda") < 0.9
+            optimizer.zero_grad()
+            for i in range(self.num_heads):
+                output = GAT[i].forward(adj_list[i].to_sparse(),features)
+
+                kl_loss = loss((output[train_mask]+eps).log(),(labels[train_mask]+eps))
+                kl_loss_val = loss((output[val_mask]+eps).log(),(labels[val_mask]+eps))
+
+                Kl_loss.append(kl_loss)
+                Kl_loss_val.append(kl_loss_val)
+
+            total_loss = sum(Kl_loss)
+
+            (Kl_loss[0]).backward()
+            (Kl_loss[1]).backward()
+            optimizer.step()
+            val_loss = sum(Kl_loss_val)
+            if best_val>val_loss:
+                best_val = val_loss
+                for i in range(self.num_heads):
+                    best_gat[i] = copy.deepcopy(GAT[i].state_dict())
+                best_epoch = epoch
+                patience = 0
+            else:
+            	patience+=1
+            if patience>=200:
+            	print("best_val",best_val)
+            	print("early stop")
+            	break
+            #print("best val loss:",best_val)
+            #print("val loss 1:",Kl_loss_val[0])
+            #print("val loss 2:",Kl_loss_val[1])
+            #print("epoch",epoch)
+            #print("training loss",total_loss.item())
+        
+        GAT = []
+        for i in range(self.num_heads):
+            gat = GCN_attention2(in_dim, hid_dim,out_dim,dropout,1).to(self.device)
+            gat.load_state_dict(best_gat[i])
+            GAT.append(gat)
+            #torch.save(GAT[i].state_dict(),"GAT"+str(i)+"_drug_811_32_.pth")
+        '''GAT = []
+        for i in range(self.num_heads):
+            gat = GCN_attention(in_dim, hid_dim,out_dim,dropout,1).to(self.device)
+            gat.load_state_dict(torch.load("GAT"+str(i)+"_drug_811_32_.pth"))
+            GAT.append(gat)'''
+        self.mugcn_layers = GAT
+        print("GCN attention single case")
+        test_loss, test_acc, test_micro_f1, test_macro_f1,_ = evaluate(self.mugcn_layers[0], adj_list[0].to_sparse(), adj_list[1].to_sparse(),features, labels, test_mask, loss)
+        print("Test loss {:.4f} | Test Micro f1 {:.4f} | Test Macro f1 {:.4f}".format(test_loss.item(),
+        test_micro_f1, test_macro_f1))
+        test_loss, test_acc, test_micro_f1, test_macro_f1,_ = evaluate(self.mugcn_layers[1], adj_list[1].to_sparse(), adj_list[1].to_sparse(),features, labels, test_mask, loss)
+        print("Test loss {:.4f} | Test Micro f1 {:.4f} | Test Macro f1 {:.4f}".format(test_loss.item(),
+        test_micro_f1, test_macro_f1))
+        """
+        
+        
+        #test_loss, test_acc, test_micro_f1, test_macro_f1,_ = evaluate(self.mugcn_layers[2], adj_list[2].to_sparse(), adj_list[1].to_sparse(),features, labels, test_mask, loss)
+        #print("Test loss {:.4f} | Test Micro f1 {:.4f} | Test Macro f1 {:.4f}".format(test_loss.item(),
+        #test_micro_f1, test_macro_f1))
+        
         #self.GCN = GCN(nfeat=in_dim, nhid=hid_dim//2,dropout=0.3,num_layers=3)
         #self.Q2 = nn.Linear(hid_dim//num_heads,hid_dim//num_heads,bias=True)
         #self.K2 = nn.Linear(hid_dim//num_heads,hid_dim//num_heads,bias=True)

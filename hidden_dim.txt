@@ -1,0 +1,4 @@
+DRUG attention hidden dimension 40/embedding hidden dimension 64/learning rate 0.005/reg beta 0.0001
+ACM attention hidden dimension 5/embedding hidden dimension 64/learning rate 0.005/reg beta 0/
+DBLP attention hidden dimension 30/embedding hidden dimension 64/learning rate 0.005/
+YELP attention hidden dimension 50/embedding hidden dimension 64/learning rate 0.05/

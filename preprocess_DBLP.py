@@ -494,6 +494,9 @@ paper_dict_new = defaultdict(list)
 paper_id = list(paper_id)
 term_id = list(term_id)
 conf_id = list(conf_id)
+print("conf number",len(conf_id))
+print("paper number",len(paper_id))
+print("term id",len(term_id))
 conf_dict_new = defaultdict(list)
 for i in range(len(paper_id)):
     paper_dict_new[paper_id[i]].append(i)
@@ -556,10 +559,10 @@ hetero_graph['conference','to','paper'].edge_index = id_to_index(edge_dict_to_in
 hetero_graph['paper','to','conference'].edge_index = id_to_index(edge_dict_to_index(paper_conf_new),paper_dict_new,conf_dict_new)
 
 print("edge index example:",hetero_graph['term','to','paper'])
-#print(edge_dict_to_index(paper_author_new).shape)
-#print(edge_dict_to_index(paper_term_new).shape)
+print(edge_dict_to_index(paper_author_new).shape)
+print(edge_dict_to_index(paper_term_new).shape)
 #print(edge_dict_to_index(term_paper_new).shape)
-#print(edge_dict_to_index(conf_paper_new).shape)
+print(edge_dict_to_index(conf_paper_new).shape)
 #print(edge_dict_to_index(paper_conf_new).shape)
 meta_path_list = [('author','paper','author'),('author','paper','conference','paper','author'),('author','paper','term','paper','author')]
 meta_path_list = [('author','paper','author')]
