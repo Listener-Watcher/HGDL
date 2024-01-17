@@ -4,7 +4,7 @@ from scipy.spatial import distance
 from utils_ import clark,intersection,from_edge_index_to_adj,gcn_norm,adj_norm
 # from utils_mugcn_pre import *
 from load_data_transformer import *
-from model_transformer import Gtransformerblock
+from model_HAN import Gtransformerblock
 import dgl
 import datetime
 import errno
@@ -118,8 +118,8 @@ def main(args):
     adj_list_origin = []
     if args.dataset != 'yelp':
         if args.dataset == "drug":
-            meta_paths = [[("drug","to","protein"),("protein","to","drug")],[("drug","to","disease"),("disease","to","drug")]]
-            #meta_paths = [[("drug","to","protein"),("protein","to","drug")],[("drug","to","protein"),("protein","to","gene"),("gene","to","protein"),("protein","to","drug")]]
+            #meta_paths = [[("drug","to","protein"),("protein","to","drug")],[("drug","to","disease"),("disease","to","drug")]]
+            meta_paths = [[("drug","to","protein"),("protein","to","drug")],[("drug","to","disease"),("disease","to","drug")],[("drug","to","protein"),("protein","to","gene"),("gene","to","protein"),("protein","to","drug")]]
         elif args.dataset == "acm":
             meta_paths=[[("author","to","paper"),("paper","to","author")],[("author","to","affiliation"),("affiliation","to","author")],[("author","to","paper"),("paper","to","subjects"),("subjects","to","paper"),("paper","to","author")]]
             #meta_paths=[[("author","to","paper"),("paper","to","author")],[("author","to","affiliation"),("affiliation","to","author")],[("author","to","paper"),("paper","to","subjects"),("subjects","to","paper"),("paper","to","author")]]
@@ -142,7 +142,8 @@ def main(args):
         adj_list.append(gcn_norm(from_edge_index_to_adj(g[1].to("cuda:0")).fill_diagonal_(0)))
         adj_list_origin.append(from_edge_index_to_adj(g[0].to("cuda:0")).fill_diagonal_(0))
         adj_list_origin.append(from_edge_index_to_adj(g[1].to("cuda:0")).fill_diagonal_(0))
-    
+    for i in range(len(adj_list_origin)):
+        print("# of edges",torch.sum(adj_list_origin[i]))
     #print(adj_list[0].shape)
     #print("num_heads",len(adj_list))
     # meta_paths = [['AP','PA'],['AP','PC','CP','PA']]
@@ -247,7 +248,7 @@ if __name__ == "__main__":
     parser.add_argument('--layer_norm',type=bool,default=True)
     parser.add_argument('--residual',type=bool,default=True)
     parser.add_argument('--use_bias',type=bool,default=True)
-    parser.add_argument('--patience',type=int,default=30)
+    parser.add_argument('--patience',type=int,default=200)
     parser.add_argument('--seed',type=int,default=0)
     parser.add_argument('--hidden',type=int,default=64)
     args = parser.parse_args()
