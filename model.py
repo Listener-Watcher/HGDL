@@ -356,7 +356,7 @@ class Gtransformerblock(nn.Module):
         optimizer = torch.optim.Adam(parameters,lr=0.005,weight_decay = 0)
         loss = KLDivLoss(reduction="batchmean")
         #optimizer = torch.optim.Adam(list(gat.parameters()),lr=0.005,weight_decay=0)
-        best_gat = [None]*self.num_heads
+        best_gat = [None for i in range(self.num_heads)]
         patience = 0
         best_epoch = 0
         #Label_corr = []
