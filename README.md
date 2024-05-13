@@ -6,7 +6,7 @@ Numpy<br />
 Sklearn<br />
 scipy<br />
 matplotlib<br />
-Due to the PyTorch cuda version may vary, package collision might occur. If you cannot resolve the package version, please send me an email for further details.<br />
+pip install -r requirements.txt
 # HGDL implementation
 
 ## data for DBLP and YELP dataset is too large to upload in the github. The dataset is stored in the OneDrive. Due to the anonymous requirement, the link will be posted later.
