@@ -1,4 +1,10 @@
-DRUG attention hidden dimension 40/embedding hidden dimension 64/learning rate 0.005/reg beta 0.0001
+DRUG attention hidden dimension 40/embedding hidden dimension 64/learning rate 0.005/reg beta 0.0001(0.1)
+seed 0,1,4,6,10
 ACM attention hidden dimension 5/embedding hidden dimension 64/learning rate 0.005/reg beta 0/
-DBLP attention hidden dimension 30/embedding hidden dimension 64/learning rate 0.005/
-YELP attention hidden dimension 50/embedding hidden dimension 64/learning rate 0.05/
+seed 0,1,2,3,4
+DBLP attention hidden dimension 30/embedding hidden dimension 64/learning rate 0.005/reg beta 0
+seed 0,1,2,3,4
+YELP attention hidden dimension 30/embedding hidden dimension 64/learning rate 0.005/reg beta 0
+seed 0,1,5,6,10
+URBAN attention hidden dimension 1/embedding hidden dimension 4/learning rate 0.005/reg beta 0
+seed 0,1,2,3,4
