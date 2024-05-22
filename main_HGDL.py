@@ -125,6 +125,8 @@ def main(args):
         elif args.dataset == "dblp":
             #meta_paths=[[("author","to","paper"),("paper","to","conference"),("conference","to","paper"),("paper","to","author")],[("author","to","paper"),("paper","to","term"),("term","to","paper"),("paper","to","author")],[("author","to","paper"),("paper","to","author")]]
             meta_paths=[[("author","to","paper"),("paper","to","conference"),("conference","to","paper"),("paper","to","author")],[("author","to","paper"),("paper","to","term"),("term","to","paper"),("paper","to","author")]]
+        elif args.dataset == "urban":
+            meta_paths = [[("0","to","1"),("1","to","0")],[("0","to","2"),("2","to","0")],[("0","to","3"),("3","to","0")]]
         else:
             print("no meta path found")
             exit()
@@ -139,8 +141,8 @@ def main(args):
     else:
         adj_list.append(gcn_norm(from_edge_index_to_adj(g[0].to("cuda:0")).fill_diagonal_(0)))
         adj_list.append(gcn_norm(from_edge_index_to_adj(g[1].to("cuda:0")).fill_diagonal_(0)))
-        adj_list_origin.append(from_edge_index_to_adj(g[0].to("cuda:0")).fill_diagonal_(0))
-        adj_list_origin.append(from_edge_index_to_adj(g[1].to("cuda:0")).fill_diagonal_(0))
+        # adj_list_origin.append(from_edge_index_to_adj(g[0].to("cuda:0")).fill_diagonal_(0))
+        # adj_list_origin.append(from_edge_index_to_adj(g[1].to("cuda:0")).fill_diagonal_(0))
     
     #print(adj_list[0].shape)
     #print("num_heads",len(adj_list))
@@ -173,7 +175,7 @@ def main(args):
     use_bias = args.use_bias
     hid_dim = args.hidden
     atten_dim = args.atten
-    model = Gtransformerblock(in_dim=in_dim,hid_dim=hid_dim,out_dim=out_dim, attention_dim=atten_dim,num_heads=num_heads,adj_list=adj_list,adj_list_origin = adj_list_origin,features=features,labels=labels,train_mask=train_mask,val_mask=val_mask,test_mask=test_mask,device=args.device,dropout=dropout, layer_norm=layer_norm, use_bias=use_bias).to(args.device)
+    model = Gtransformerblock(args=args,in_dim=in_dim,hid_dim=hid_dim,out_dim=out_dim, attention_dim=atten_dim,num_heads=num_heads,adj_list=adj_list,features=features,labels=labels,train_mask=train_mask,val_mask=val_mask,test_mask=test_mask,device=args.device,dropout=dropout, layer_norm=layer_norm, use_bias=use_bias,gamma=args.gamma).to(args.device)
     
     """
     stopper = EarlyStopping(patience=args.patience)
@@ -247,5 +249,6 @@ if __name__ == "__main__":
     parser.add_argument('--seed',type=int,default=0)
     parser.add_argument('--hidden',type=int,default=64)
     parser.add_argument('--atten',type=int,default=5)
+    parser.add_argument('--gamma',type=float,default=0)
     args = parser.parse_args()
     main(args)

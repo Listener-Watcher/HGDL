@@ -4,7 +4,7 @@ from scipy.spatial import distance
 from utils_ import clark,intersection,from_edge_index_to_adj,gcn_norm,adj_norm
 # from utils_mugcn_pre import *
 from load_data_transformer import *
-from model_SeHGNN import Gtransformerblock
+from model_GCN import Gtransformerblock
 import dgl
 import datetime
 import errno
@@ -17,7 +17,9 @@ eps = 1e-9
 class EarlyStopping(object):
     def __init__(self, patience=10):
         dt = datetime.datetime.now()
-        self.filename = "SeHGNN_"+args.dataset+"seed"+str(args.seed)
+        self.filename = "early_stop_{}_{:02d}-{:02d}-{:02d}.pth".format(
+            dt.date(), dt.hour, dt.minute, dt.second
+        )
         self.patience = patience
         self.counter = 0
         #self.best_acc = None
@@ -31,7 +33,7 @@ class EarlyStopping(object):
             self.best_loss = loss
             self.save_checkpoint(model)
             self.best_epochs = 0
-        elif (loss >= self.best_loss):
+        elif (loss > self.best_loss):
             self.counter += 1
             print(
                 f"EarlyStopping counter: {self.counter} out of {self.patience}"
@@ -39,7 +41,7 @@ class EarlyStopping(object):
             if self.counter >= self.patience:
                 self.early_stop = True
         else:
-            if (loss < self.best_loss):
+            if (loss <= self.best_loss):
                 self.save_checkpoint(model)
                 self.best_epochs = self.epochs
             self.best_loss = np.min((loss, self.best_loss))
@@ -110,7 +112,6 @@ def main(args):
         val_mask,
         test_mask,
     ) = load_data(args.dataset,args.seed)
-    print(len(train_idx))
     #APCPA
     adj_list = []
     adj_list_origin = []
@@ -140,8 +141,8 @@ def main(args):
     else:
         adj_list.append(gcn_norm(from_edge_index_to_adj(g[0].to("cuda:0")).fill_diagonal_(0)))
         adj_list.append(gcn_norm(from_edge_index_to_adj(g[1].to("cuda:0")).fill_diagonal_(0)))
-        adj_list_origin.append(from_edge_index_to_adj(g[0].to("cuda:0")).fill_diagonal_(0))
-        adj_list_origin.append(from_edge_index_to_adj(g[1].to("cuda:0")).fill_diagonal_(0))
+        #adj_list_origin.append(from_edge_index_to_adj(g[0].to("cuda:0")).fill_diagonal_(0))
+        #adj_list_origin.append(from_edge_index_to_adj(g[1].to("cuda:0")).fill_diagonal_(0))
     
     #print(adj_list[0].shape)
     #print("num_heads",len(adj_list))
@@ -173,39 +174,36 @@ def main(args):
     layer_norm = args.layer_norm
     use_bias = args.use_bias
     hid_dim = args.hidden
-    model = Gtransformerblock(args=args,in_dim=in_dim,hid_dim=hid_dim,out_dim=out_dim, num_heads=num_heads,adj_list=adj_list,adj_list_origin = adj_list_origin,features=features,labels=labels,train_mask=train_mask,val_mask=val_mask,test_mask=test_mask,device=args.device,dropout=dropout, layer_norm=layer_norm, use_bias=use_bias).to(args.device)
-    #print("begin test")
-    #model.forward(adj_list,features)
-    #print("end test")
+    atten_dim = args.atten
+    model = Gtransformerblock(args=args,in_dim=in_dim,hid_dim=hid_dim,out_dim=out_dim, attention_dim=atten_dim,num_heads=num_heads,adj_list=adj_list,features=features,labels=labels,train_mask=train_mask,val_mask=val_mask,test_mask=test_mask,device=args.device,dropout=dropout, layer_norm=layer_norm, use_bias=use_bias,gamma=args.gamma).to(args.device)
     
-    
+    """
     stopper = EarlyStopping(patience=args.patience)
     #loss_fcn = torch.nn.CrossEntropyLoss()
     loss_fcn = torch.nn.KLDivLoss(reduction='batchmean')
     optimizer = torch.optim.Adam(
-        model.parameters(), lr=0.005, weight_decay=0
+        model.parameters(), lr=0.1, weight_decay=0
     )
-    for epoch in range(3000):
+    for epoch in range(1000):
         model.train()
         logits = model.forward(adj_list, features)
         loss = loss_fcn((logits[train_mask]+1e-9).log(), labels[train_mask]+1e-9)
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
-        #train_acc, train_micro_f1, train_macro_f1,train_score_intersection = score(
-        #    logits[train_mask], labels[train_mask]
-        #)
-        '''val_loss, val_acc, val_micro_f1, val_macro_f1,val_score_intersection = evaluate(
+        train_acc, train_micro_f1, train_macro_f1,train_score_intersection = score(
+            logits[train_mask], labels[train_mask]
+        )
+        val_loss, val_acc, val_micro_f1, val_macro_f1,val_score_intersection = evaluate(
             model, adj_list, features, labels, val_mask, loss_fcn
-        )'''
-        val_loss = loss_fcn((logits[val_mask]+1e-9).log(),labels[val_mask]+1e-9)
+        )
         '''test_loss, test_acc, test_micro_f1, test_macro_f1,test_score_intersection = evaluate(
             model, adj_list, features, labels, test_mask, loss_fcn
         )'''
         early_stop = stopper.step(val_loss.data.item(), model)
         #early_stop = stopper.step(val_score_intersection,model)
-        print(val_loss)
-        '''print(
+
+        print(
             "Epoch {:d} | Train Loss {:.4f} | Train Micro f1 {:.4f} | Train Macro f1 {:.4f} | "
             "Val Loss {:.4f} | Val Micro f1 {:.4f} | Val Macro f1 {:.4f}".format(
                 epoch + 1,
@@ -216,7 +214,7 @@ def main(args):
                 val_micro_f1,
                 val_macro_f1,
             )
-        )'''
+        )
         #print(test_loss)
         if early_stop:
             break
@@ -229,7 +227,7 @@ def main(args):
         "Test loss {:.4f} | Test Micro f1 {:.4f} | Test Macro f1 {:.4f}".format(
             test_loss.item(), test_micro_f1, test_macro_f1
         )
-    )
+    )"""
 
     
     
@@ -247,8 +245,10 @@ if __name__ == "__main__":
     parser.add_argument('--layer_norm',type=bool,default=True)
     parser.add_argument('--residual',type=bool,default=True)
     parser.add_argument('--use_bias',type=bool,default=True)
-    parser.add_argument('--patience',type=int,default=30)
+    parser.add_argument('--patience',type=int,default=50)
     parser.add_argument('--seed',type=int,default=0)
     parser.add_argument('--hidden',type=int,default=64)
+    parser.add_argument('--atten',type=int,default=5)
+    parser.add_argument('--gamma',type=float,default=0)
     args = parser.parse_args()
     main(args)

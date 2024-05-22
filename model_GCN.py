@@ -50,7 +50,7 @@ def score(logits, labels):
 def evaluate(model, g,features, labels, mask, loss_func):
     model.eval()
     with torch.no_grad():
-        logits,_ = model(g, features)
+        logits = model(g, features)
     loss = loss_func((logits[mask]+1e-9).log(), labels[mask]+1e-9)
     accuracy, micro_f1, macro_f1,score_intersection = score(logits[mask], labels[mask])
 
@@ -192,15 +192,11 @@ class GCN_attention_v2(nn.Module):
         self.V = nn.Linear(nhid,nhid,bias=True)
         self.gcn1=GraphConvolution(nfeat,nhid)
         self.gcn2=GraphConvolution(nhid, nclass)
-        self.num_heads = len(adj_list)
         self.layer_norm = nn.LayerNorm(nhid)
         #self.weight = Parameter(torch.FloatTensor(adj_list[0].shape[0],3)).to("cuda:0")
-        self.atten_list = torch.nn.ModuleList()
-        for i in range(self.num_heads):
-            self.atten_list.append(nn.Linear(adj_list[0].shape[0],attention_dim))
-        #self.atten = nn.Linear(adj_list[0].shape[0],attention_dim)
-        #self.atten2 = nn.Linear(adj_list[0].shape[0],attention_dim)
-        #self.atten3 = nn.Linear(adj_list[0].shape[0],attention_dim)
+        self.atten = nn.Linear(adj_list[0].shape[0],attention_dim)
+        self.atten2 = nn.Linear(adj_list[0].shape[0],attention_dim)
+        self.atten3 = nn.Linear(adj_list[0].shape[0],attention_dim)
         self.agg = nn.Linear(attention_dim*len(adj_list),len(adj_list))
         self.dropout = dropout
         #self.memory_unit = torch.FloatTensor([[1/3,1/3,1/3,0,1,0]]*adj_list[0].shape[0]).to('cuda:0')
@@ -213,14 +209,10 @@ class GCN_attention_v2(nn.Module):
         Adj_kernel = []
         for i in range(len(adj_list)):
             Adj_kernel.append(adj_list[i])
-        z_list = []
-        for i in range(self.num_heads):
-            z_list.append(self.atten_list[i](Adj_kernel[i]))
-        #z1 = self.atten(Adj_kernel[0])
-        #z2 = self.atten2(Adj_kernel[1])
-        #z3 = self.atten3(Adj_kernel[2])
-        z_tuple = tuple(z_list)
-        z4 = ((self.agg(torch.cat(z_tuple,dim=1))))
+        z1 = self.atten(Adj_kernel[0])
+        z2 = self.atten2(Adj_kernel[1])
+        z3 = self.atten3(Adj_kernel[2])
+        z4 = ((self.agg(torch.cat((z1,z2,z3),dim=1))))
         #z4 = self.agg(torch.cat((z1,z2),dim=1))
         #print("stack shape",z4.shape)
         nz = torch.softmax(z4,dim=1)
@@ -231,10 +223,7 @@ class GCN_attention_v2(nn.Module):
         #print("nz away from 0,1",torch.sum(nz[:,1]>0.5)/nz.shape[0])
         #print(nz)
         #self.memory_unit = nz
-        adj = nz[:,0]*adj_list[0]
-        for i in range(1,len(adj_list)):
-            adj+=nz[:,i]*adj_list[i]
-        #adj = nz[:,0]*adj_list[0]+nz[:,1]*adj_list[1]+nz[:,2]*adj_list[2]
+        adj = nz[:,0]*adj_list[0]+nz[:,1]*adj_list[1]+nz[:,2]*adj_list[2]
         #adj = nz[:,0]*adj_list[0]+nz[:,1]*adj_list[1]
         #adj = gcn_norm(adj)
         #adj_sparse = adj.to_sparse()
@@ -249,7 +238,7 @@ class GCN_attention_v2(nn.Module):
         #attention = torch.sparse.softmax(A_tilde,dim=1)     
         X_tilde = torch.matmul(gcn_norm(attention),V_h)
         X_tilde = F.leaky_relu(X_tilde,0.9)
-        #random_mask = torch.rand(adj_list[0].shape,device="cuda:0")<0.9
+        #random_mask = torch.rand(adj_list[0].shape,device="cuda:0")<0.3
         #X_tilde = F.relu(self.gcn(x,torch.mul(adj.to_dense(),random_mask).to_sparse()))
         #X_tilde = F.relu(self.gcn(x,adj))
         z = self.gcn2(X_tilde,adj)
@@ -315,56 +304,56 @@ class Gtransformerblock(nn.Module):
         self.train_mask = train_mask
         self.val_mask = val_mask        
         self.device = device
-        gat = GCN_attention_v2(in_dim,hid_dim,out_dim,dropout,1,adj_list,attention_dim).to(self.device)
-        gat.train()
-        optimizer = torch.optim.Adam(list(gat.parameters()),lr=args.lr,weight_decay=0)
-        loss = KLDivLoss(reduction="batchmean")
-        best_loss = 100
-        patience = 0
-        best_model = None
-        uniform = torch.FloatTensor([[1/len(adj_list)]*len(adj_list)]*adj_list[0].shape[0]).to('cuda:0')
-        for epoch in range(2000):
-            optimizer.zero_grad()
-            output,nj = gat.forward(adj_list,features)
-            kl_loss = loss((output[train_mask]+eps).log(),(labels[train_mask]+eps))
-            kl_loss_val = loss((output[val_mask]+eps).log(),(labels[val_mask]+eps))
-            #uniform = torch.FloatTensor([[1/3,1/3,1/3]]*adj_list[0].shape[0]).to('cuda:0')
-            #uniform = torch.FloatTensor([[0.5,0.5]]*adj_list[0].shape[0]).to('cuda:0')
-            con_loss = torch.sum(torch.abs(nj-uniform))
-            (kl_loss-gamma*con_loss).backward()
-            #kl_loss.backward()
-            optimizer.step()
-            if kl_loss_val<best_loss:
-                best_loss = kl_loss_val
-                patience = 0
-                best_model= copy.deepcopy(gat.state_dict())
-            else:
-                patience+=1
-                print("patience:",patience)
-            if patience>args.patience:
-                break
-            print("val loss",kl_loss_val.item())
-        print("best val loss",best_loss.item())
-        #torch.save(best_model,"./result/ACM_sample_our_method_seed"+str(args.seed)+".pth")
-        gat.load_state_dict(best_model)
-        print("HGDL")
-        test_loss, test_acc, test_micro_f1, test_macro_f1,_ = evaluate(gat, adj_list,features, labels, test_mask, loss)
-        print("Test loss {:.4f} | Test Micro f1 {:.4f} | Test Macro f1 {:.4f}".format(test_loss.item(), test_micro_f1, test_macro_f1))
+        # gat = GCN_attention_v2(in_dim,hid_dim,out_dim,dropout,1,adj_list,attention_dim).to(self.device)
+        # gat.train()
+        # optimizer = torch.optim.Adam(list(gat.parameters()),lr=args.lr,weight_decay=0)
+        # loss = KLDivLoss(reduction="batchmean")
+        # best_loss = 100
+        # patience = 0
+        # best_model = None
+        # uniform = torch.FloatTensor([[1/len(adj_list)]*len(adj_list)]*adj_list[0].shape[0]).to('cuda:0')
+        # for epoch in range(2000):
+        #     optimizer.zero_grad()
+        #     output,nj = gat.forward(adj_list,features)
+        #     kl_loss = loss((output[train_mask]+eps).log(),(labels[train_mask]+eps))
+        #     kl_loss_val = loss((output[val_mask]+eps).log(),(labels[val_mask]+eps))
+        #     #uniform = torch.FloatTensor([[1/3,1/3,1/3]]*adj_list[0].shape[0]).to('cuda:0')
+        #     #uniform = torch.FloatTensor([[0.5,0.5]]*adj_list[0].shape[0]).to('cuda:0')
+        #     con_loss = torch.sum(torch.abs(nj-uniform))
+        #     (kl_loss-gamma*con_loss).backward()
+        #     #kl_loss.backward()
+        #     optimizer.step()
+        #     if kl_loss_val<best_loss:
+        #         best_loss = kl_loss_val
+        #         patience = 0
+        #         best_model= copy.deepcopy(gat.state_dict())
+        #     else:
+        #         patience+=1
+        #         print("patience:",patience)
+        #     if patience>args.patience:
+        #         break
+        #     print("val loss",kl_loss_val.item())
+        # print("best val loss",best_loss.item())
+        # torch.save(best_model,"./result/ACM_sample_our_method_seed"+str(args.seed)+".pth")
+        # gat.load_state_dict(best_model)
+        # print("HGDL")
+        # test_loss, test_acc, test_micro_f1, test_macro_f1,_ = evaluate(gat, adj_list,features, labels, test_mask, loss)
+        # print("Test loss {:.4f} | Test Micro f1 {:.4f} | Test Macro f1 {:.4f}".format(test_loss.item(), test_micro_f1, test_macro_f1))
         
         
         
-        """
         GAT = []
         parameters = []
         #Optimizer = []
         for i in range(self.num_heads):
             gat = GCN_attention(in_dim, hid_dim,out_dim,dropout,1).to(self.device)
+            #gat = GCN(in_dim, hid_dim,out_dim,dropout,1).to(self.device)
             gat.train()
             #optimizer = torch.optim.Adam(list(gat.parameters()),lr=0.005,weight_decay=0)
             #Optimizer.append(optimizer)
             GAT.append(gat)
             parameters+=list(GAT[i].parameters())
-        optimizer = torch.optim.Adam(parameters,lr=0.005,weight_decay = 0)
+        optimizer = torch.optim.Adam(parameters,lr=args.lr,weight_decay = 0)
         loss = KLDivLoss(reduction="batchmean")
         #optimizer = torch.optim.Adam(list(gat.parameters()),lr=0.005,weight_decay=0)
         best_gat = [None for i in range(self.num_heads)]
@@ -372,10 +361,10 @@ class Gtransformerblock(nn.Module):
         best_epoch = 0
         #Label_corr = []
         #Kl_loss = []
-        best_val = 100
+        best_val = [100 for i in range(self.num_heads)]
         #weight = torch.tensor([1,0]).to(self.device)
         #weight = torch.tensor([0.33333,0.33333,0.33333]).to(self.device)
-        for epoch in range(2000):
+        for epoch in range(1):
             Label_corr = []
             #Label_corr2 = []
             Kl_loss = []
@@ -402,15 +391,15 @@ class Gtransformerblock(nn.Module):
             #(Kl_loss[2]).backward()
             optimizer.step()
             val_loss = sum(Kl_loss_val)
-            if best_val>val_loss:
-                best_val = val_loss
-                for i in range(self.num_heads):
+            for i in range(self.num_heads):
+                if best_val[i]>Kl_loss_val[i]:
+                    best_val[i] = Kl_loss_val[i]
                     best_gat[i] = copy.deepcopy(GAT[i].state_dict())
-                best_epoch = epoch
-                patience = 0
-            else:
-            	patience+=1
-            if patience>=100:
+                    #best_epoch = epoch
+                    patience = 0
+                else:
+                    patience+=1
+            if patience>=args.patience:
             	print("best_val",best_val)
             	print("early stop")
             	break
@@ -424,9 +413,11 @@ class Gtransformerblock(nn.Module):
         GAT = []
         for i in range(self.num_heads):
             gat = GCN_attention(in_dim, hid_dim,out_dim,dropout,1).to(self.device)
+            #gat = GCN(in_dim, hid_dim,out_dim,dropout,1).to(self.device)
+            best_gat[i] = torch.load(args.dataset+"_attention_single"+str(i)+"seed"+str(args.seed)+".pth")
             gat.load_state_dict(best_gat[i])
             GAT.append(gat)
-            #torch.save(GAT[i].state_dict(),"ACM_attention_single"+str(i)+".pth")
+            #torch.save(GAT[i].state_dict(),args.dataset+"_attention_single"+str(i)+"seed"+str(args.seed)+".pth")
         '''GAT = []
         for i in range(self.num_heads):
             gat = GCN_attention(in_dim, hid_dim,out_dim,dropout,1).to(self.device)
@@ -434,16 +425,17 @@ class Gtransformerblock(nn.Module):
             GAT.append(gat)'''
         self.mugcn_layers = GAT
         print("Attention single case")
-        test_loss, test_acc, test_micro_f1, test_macro_f1,_ = evaluate(self.mugcn_layers[0], adj_list[0].to_sparse(), adj_list[1].to_sparse(),features, labels, test_mask, loss)
-        print("Test loss {:.4f} | Test Micro f1 {:.4f} | Test Macro f1 {:.4f}".format(test_loss.item(),
-        test_micro_f1, test_macro_f1))
-        test_loss, test_acc, test_micro_f1, test_macro_f1,_ = evaluate(self.mugcn_layers[1], adj_list[1].to_sparse(), adj_list[1].to_sparse(),features, labels, test_mask, loss)
-        print("Test loss {:.4f} | Test Micro f1 {:.4f} | Test Macro f1 {:.4f}".format(test_loss.item(),
-        test_micro_f1, test_macro_f1))
-        test_loss, test_acc, test_micro_f1, test_macro_f1,_ = evaluate(self.mugcn_layers[2], adj_list[2].to_sparse(), adj_list[2].to_sparse(),features, labels, test_mask, loss)
-        print("Test loss {:.4f} | Test Micro f1 {:.4f} | Test Macro f1 {:.4f}".format(test_loss.item(),
-        test_micro_f1, test_macro_f1))
-        """
+        for i in range(len(adj_list)):
+            test_loss, test_acc, test_micro_f1, test_macro_f1,_ = evaluate(self.mugcn_layers[i], adj_list[i].to_sparse(),features, labels, test_mask, loss)
+            print("Test loss {:.4f} | Test Micro f1 {:.4f} | Test Macro f1 {:.4f}".format(test_loss.item(),
+            test_micro_f1, test_macro_f1))
+        # test_loss, test_acc, test_micro_f1, test_macro_f1,_ = evaluate(self.mugcn_layers[1], adj_list[1].to_sparse(),features, labels, test_mask, loss)
+        # print("Test loss {:.4f} | Test Micro f1 {:.4f} | Test Macro f1 {:.4f}".format(test_loss.item(),
+        # test_micro_f1, test_macro_f1))
+        # test_loss, test_acc, test_micro_f1, test_macro_f1,_ = evaluate(self.mugcn_layers[2], adj_list[2].to_sparse(),features, labels, test_mask, loss)
+        # print("Test loss {:.4f} | Test Micro f1 {:.4f} | Test Macro f1 {:.4f}".format(test_loss.item(),
+        # test_micro_f1, test_macro_f1))
+        
        
         
         """

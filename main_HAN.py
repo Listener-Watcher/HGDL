@@ -17,9 +17,7 @@ eps = 1e-9
 class EarlyStopping(object):
     def __init__(self, patience=10):
         dt = datetime.datetime.now()
-        self.filename = "early_stop_{}_{:02d}-{:02d}-{:02d}.pth".format(
-            dt.date(), dt.hour, dt.minute, dt.second
-        )
+        self.filename = "HAN_"+args.dataset+"seed"+str(args.seed)
         self.patience = patience
         self.counter = 0
         #self.best_acc = None
@@ -33,7 +31,7 @@ class EarlyStopping(object):
             self.best_loss = loss
             self.save_checkpoint(model)
             self.best_epochs = 0
-        elif (loss > self.best_loss):
+        elif (loss >= self.best_loss):
             self.counter += 1
             print(
                 f"EarlyStopping counter: {self.counter} out of {self.patience}"
@@ -41,7 +39,8 @@ class EarlyStopping(object):
             if self.counter >= self.patience:
                 self.early_stop = True
         else:
-            if (loss <= self.best_loss):
+            print("not greater?")
+            if (loss < self.best_loss):
                 self.save_checkpoint(model)
                 self.best_epochs = self.epochs
             self.best_loss = np.min((loss, self.best_loss))
@@ -126,6 +125,8 @@ def main(args):
         elif args.dataset == "dblp":
             #meta_paths=[[("author","to","paper"),("paper","to","conference"),("conference","to","paper"),("paper","to","author")],[("author","to","paper"),("paper","to","term"),("term","to","paper"),("paper","to","author")],[("author","to","paper"),("paper","to","author")]]
             meta_paths=[[("author","to","paper"),("paper","to","conference"),("conference","to","paper"),("paper","to","author")],[("author","to","paper"),("paper","to","term"),("term","to","paper"),("paper","to","author")]]
+        elif args.dataset == "urban":
+            meta_paths = [[("0","to","1"),("1","to","0")],[("0","to","2"),("2","to","0")],[("0","to","3"),("3","to","0")]]
         else:
             print("no meta path found")
             exit()
@@ -174,7 +175,7 @@ def main(args):
     layer_norm = args.layer_norm
     use_bias = args.use_bias
     hid_dim = args.hidden
-    model = Gtransformerblock(in_dim=in_dim,hid_dim=hid_dim,out_dim=out_dim, num_heads=num_heads,adj_list=adj_list,adj_list_origin = adj_list_origin,features=features,labels=labels,train_mask=train_mask,val_mask=val_mask,test_mask=test_mask,device=args.device,dropout=dropout, layer_norm=layer_norm, use_bias=use_bias).to(args.device)
+    model = Gtransformerblock(args=args,in_dim=in_dim,hid_dim=hid_dim,out_dim=out_dim, num_heads=num_heads,adj_list=adj_list,adj_list_origin = adj_list_origin,features=features,labels=labels,train_mask=train_mask,val_mask=val_mask,test_mask=test_mask,device=args.device,dropout=dropout, layer_norm=layer_norm, use_bias=use_bias).to(args.device)
     #print("begin test")
     #model.forward(adj_list,features)
     #print("end test")
@@ -251,5 +252,6 @@ if __name__ == "__main__":
     parser.add_argument('--patience',type=int,default=200)
     parser.add_argument('--seed',type=int,default=0)
     parser.add_argument('--hidden',type=int,default=64)
+    parser.add_argument('--atten',type=int,default=5)
     args = parser.parse_args()
     main(args)

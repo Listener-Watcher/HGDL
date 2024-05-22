@@ -168,7 +168,7 @@ class GCN_attention(nn.Module):
         
 class Gtransformerblock(nn.Module):
     def __init__(
-        self,in_dim,hid_dim,out_dim,num_heads,adj_list,adj_list_origin,features,labels, train_mask,val_mask,test_mask,device,dropout=0.0, layer_norm=True, use_bias=False):
+        self,args,in_dim,hid_dim,out_dim,num_heads,adj_list,adj_list_origin,features,labels, train_mask,val_mask,test_mask,device,dropout=0.0, layer_norm=True, use_bias=False):
         super().__init__()
         self.in_channels = in_dim
         self.hid_channels = hid_dim
@@ -187,7 +187,7 @@ class Gtransformerblock(nn.Module):
         loss = KLDivLoss(reduction="batchmean")
         for i in range(self.num_heads):
             gat = GCN_attention(in_dim, hid_dim,out_dim,dropout,1).to(self.device)
-            gat.load_state_dict(torch.load("ACM_attention_single"+str(i)+".pth"))
+            gat.load_state_dict(torch.load(args.dataset+"_attention_single"+str(i)+"seed"+str(args.seed)+".pth"))
             GAT.append(gat)
         self.mugcn_layers = GAT
         print("Attention single case")
@@ -206,7 +206,7 @@ class Gtransformerblock(nn.Module):
         #self.K2 = nn.Linear(hid_dim//num_heads,hid_dim//num_heads,bias=True)
         #self.V2 = nn.Linear(hid_dim//num_heads,hid_dim//num_heads,bias=True)
         self.semantic_attention = SemanticAttention(
-            in_size=hid_dim,
+            in_size=hid_dim,hidden_size=args.atten
         )
         #self.beta = torch.nn.Parameter(torch.ones(1))
         #self.projection = nn.Linear(out_dim,out_dim)

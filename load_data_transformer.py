@@ -28,9 +28,73 @@ def load_data(name,seed=0):
         return load_drug(data)
     elif name == 'yelp':
         return load_yelp()
+    elif name =='urban':
+        return load_urban()
     else:
         print("no data with the name provided exist")
         return
+
+
+def load_urban():
+    data = torch.load("data/urban/urban.pt")
+    print(data)
+    #print(torch.max((data[("0","to","1")]["edge_index"][0])))
+    #print(torch.max((data[("0","to","2")]["edge_index"][0])))
+    #print(torch.max((data[("0","to","3")]["edge_index"][0])))
+    data_dict = {}
+    for edge_type, store in data.edge_items():
+        if store.get('edge_index') is not None:
+            row, col = store.edge_index
+            #print("row",row)
+            #print('col',col)
+        else:
+            row, col, _ = store['adj_t'].t().coo()
+            #print("row1",row)
+            #print("col1",col)
+        data_dict[edge_type] = (row, col)
+    g = dgl.heterograph(data_dict)
+    #print("g",g)
+    for node_type, store in data.node_items():
+        for attr, value in store.items():
+            if type(value)==int:
+                value = torch.tensor([value]*20,dtype=torch.int8)
+            g.nodes[node_type].data[attr] = value
+        for edge_type, store in data.edge_items():
+            for attr, value in store.items():
+                if attr in ['edge_index', 'adj_t']:
+                    continue
+                g.edges[edge_type].data[attr] = value
+    #print("dgl graph:",g)
+    features = g.nodes['0'].data['x']
+    labels = g.nodes['0'].data['y']
+    print("statistics,features,labels")
+    print(features.shape)
+    print(labels.shape)
+    num_classes = labels.shape[1]
+    num_nodes = features.shape[0]
+    #print(num_nodes)
+    float_mask = np.random.permutation(np.linspace(0, 1, num_nodes))
+    #train_idx = np.where(float_mask <= 0.01)[0]
+    #val_idx = np.where((float_mask > 0.01) & (float_mask <= 0.02))[0]
+    #test_idx = np.where(float_mask > 0.02)[0]
+    train_idx = np.where(float_mask <= 0.5)[0]
+    val_idx = np.where((float_mask > 0.5) & (float_mask <= 0.8))[0]
+    test_idx = np.where(float_mask > 0.8)[0]
+    train_mask = get_binary_mask(num_nodes, train_idx)
+    val_mask = get_binary_mask(num_nodes, val_idx)
+    test_mask = get_binary_mask(num_nodes, test_idx)
+    return (
+        g,
+        features,
+        labels,
+        num_classes,
+        train_idx,
+        val_idx,
+        test_idx,
+        train_mask,
+        val_mask,
+        test_mask,
+    )
 def load_yelp():
     data = np.load("data/yelp/yelp.npz", allow_pickle=True)
     hetero = geo.data.HeteroData()
