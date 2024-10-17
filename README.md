@@ -9,7 +9,7 @@ matplotlib<br />
 pip install -r requirements.txt
 # HGDL implementation
 unzip trained_model.zip file and put all model state file in the current directory
-## data for DBLP and YELP dataset is too large to upload in the github. The dataset is stored in the OneDrive. Due to the anonymous requirement, the link will be posted later.
+## data for DBLP and YELP dataset is too large to upload in the github. The dataset is stored in the OneDrive.
 
 
 Example run for HGDL_KL<br />
