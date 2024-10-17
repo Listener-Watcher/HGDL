@@ -10,6 +10,7 @@ pip install -r requirements.txt
 # HGDL implementation
 unzip trained_model.zip file and put all model state file in the current directory
 ## data for DBLP and YELP dataset is too large to upload in the github. The dataset is stored in the OneDrive.
+https://fau-my.sharepoint.com/:f:/g/personal/yjin2021_fau_edu/Ep9fb7WYjE1CnxF82Hhn90IBrWZ0dbtuFHAHHtj3Wj7x6w?e=WRIrIA
 
 
 Example run for HGDL_KL<br />
